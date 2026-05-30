@@ -51,7 +51,9 @@ async function postTweet(tweetText) {
   try {
     console.log("Logging in to Twitter...");
     await page.goto("https://x.com/i/flow/login");
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(5000);
+    await page.screenshot({ path: "screenshot.png" });
+    console.log("Screenshot saved");
 
     // Unesi email/username
     await page.locator('input[name="text"]').fill(process.env.TWITTER_EMAIL);
