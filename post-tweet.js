@@ -55,10 +55,14 @@ async function postTweet(tweetText) {
     await page.screenshot({ path: "screenshot.png" });
     console.log("Screenshot saved");
 
-    // Unesi email/username
+    // Unesi email/username - klikni na polje u modalu (drugi input na stranici)
     await page.waitForSelector('input', { timeout: 15000 });
-    await page.getByPlaceholder('Email or username').click();
-    await page.getByPlaceholder('Email or username').fill(process.env.TWITTER_EMAIL);
+    const inputs = page.locator('input');
+    const count = await inputs.count();
+    console.log("Found inputs:", count);
+    // Uzmi poslednji input (u modalu)
+    await inputs.last().click();
+    await inputs.last().fill(process.env.TWITTER_EMAIL);
     await page.keyboard.press("Enter");
     await page.waitForTimeout(2000);
 
