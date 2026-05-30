@@ -1,5 +1,5 @@
 import { TwitterApi } from "twitter-api-v2";
-import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 
 const twitterClient = new TwitterApi({
   appKey: process.env.TWITTER_CONSUMER_KEY,
@@ -8,9 +8,8 @@ const twitterClient = new TwitterApi({
   accessSecret: process.env.TWITTER_ACCESS_SECRET,
 });
 
-const grok = new OpenAI({
-  apiKey: process.env.GROK_API_KEY,
-  baseURL: "https://api.x.ai/v1",
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
 const TOPICS = [
@@ -35,29 +34,32 @@ export default async function handler(req, res) {
   try {
     const topic = TOPICS[Math.floor(Math.random() * TOPICS.length)];
 
-    const completion = await grok.chat.completions.create({
-      model: "grok-3",
+    const message = await anthropic.messages.create({
+      model: "claude-opus-4-5",
+      max_tokens: 150,
+      system: `You are a real person who trades crypto and follows financial markets closely.
+You're not a bot, not a brand, not a newsletter — just someone who's been in markets for years and occasionally shares thoughts on Twitter.
+
+Your writing style:
+- Casual and direct, like texting a friend who's also into markets
+- Sometimes you're bullish, sometimes skeptical, sometimes just observing
+- You use lowercase sometimes, skip punctuation occasionally, write how people actually talk
+- No hashtag spam — maybe one hashtag if it really fits, often none
+- No emojis unless it's genuinely funny or fitting
+- No "thread 🧵" or "here's what you need to know" clickbait
+- Short sentences. Real opinions. Sometimes a question at the end to spark conversation.
+- Max 240 characters`,
       messages: [
-        {
-          role: "system",
-          content: `You are a sharp, opinionated finance and crypto Twitter personality.
-You write concise, insightful tweets that sound like a real human — not a bot.
-Style: direct, confident, sometimes contrarian. No hashtag spam (max 2 relevant hashtags).
-No emojis unless it really fits. No corporate speak. Max 240 characters.
-Write as if you've been in markets for years and have seen it all.`,
-        },
         {
           role: "user",
           content: `Write one tweet about: ${topic}.
-Make it feel natural, like something a knowledgeable trader or investor would post.
-Keep it under 240 characters. Return ONLY the tweet text, nothing else.`,
+Sound like a real person, not a content creator. Keep it under 240 characters.
+Return ONLY the tweet text, nothing else.`,
         },
       ],
-      max_tokens: 100,
-      temperature: 0.9,
     });
 
-    const tweetText = completion.choices[0].message.content.trim();
+    const tweetText = message.content[0].text.trim();
 
     const tweet = await twitterClient.v2.tweet(tweetText);
 
