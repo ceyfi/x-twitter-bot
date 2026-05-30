@@ -61,7 +61,7 @@ Return ONLY the tweet text, nothing else.`,
 
     const tweetText = message.content[0].text.trim();
 
-    const tweet = await twitterClient.v1.tweet(tweetText);
+    const tweet = await twitterClient.v2.tweet(tweetText);
 
     console.log("Tweet posted:", tweetText);
 
