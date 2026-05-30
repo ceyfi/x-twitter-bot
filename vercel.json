@@ -1,8 +1,5 @@
 {
   "crons": [
-    {
-      "path": "/api/post-tweet",
-      "schedule": "0 9 * * *"
-    }
+    { "path": "/api/post-tweet", "schedule": "0 9 * * *" }
   ]
 }
