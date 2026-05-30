@@ -56,6 +56,8 @@ async function postTweet(tweetText) {
     console.log("Screenshot saved");
 
     // Unesi email/username
+    await page.waitForSelector('input[name="text"]', { timeout: 15000 });
+    await page.locator('input[name="text"]').click();
     await page.locator('input[name="text"]').fill(process.env.TWITTER_EMAIL);
     await page.keyboard.press("Enter");
     await page.waitForTimeout(2000);
