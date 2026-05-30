@@ -72,6 +72,10 @@ Return ONLY the tweet text, nothing else.`,
     });
   } catch (error) {
     console.error("Error:", error);
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({
+      error: error.message,
+      code: error.code,
+      data: error.data || null
+    });
   }
 }
