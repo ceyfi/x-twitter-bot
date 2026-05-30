@@ -50,26 +50,26 @@ async function postTweet(tweetText) {
 
   try {
     console.log("Logging in to Twitter...");
-    await page.goto("https://twitter.com/login");
+    await page.goto("https://x.com/i/flow/login");
+    await page.waitForTimeout(3000);
+
+    // Unesi email/username
+    await page.locator('input[name="text"]').fill(process.env.TWITTER_EMAIL);
+    await page.keyboard.press("Enter");
     await page.waitForTimeout(2000);
 
-    // Unesi email
-    await page.fill('input[autocomplete="username"]', process.env.TWITTER_EMAIL);
-    await page.keyboard.press("Enter");
-    await page.waitForTimeout(1500);
-
     // Ponekad Twitter traži username umesto emaila
-    const usernameInput = page.locator('input[data-testid="ocfEnterTextTextInput"]');
+    const usernameInput = page.locator('input[name="text"]');
     if (await usernameInput.isVisible({ timeout: 3000 }).catch(() => false)) {
       await usernameInput.fill(process.env.TWITTER_EMAIL.split("@")[0]);
       await page.keyboard.press("Enter");
-      await page.waitForTimeout(1500);
+      await page.waitForTimeout(2000);
     }
 
     // Unesi lozinku
-    await page.fill('input[name="password"]', process.env.TWITTER_PASSWORD);
+    await page.locator('input[name="password"]').fill(process.env.TWITTER_PASSWORD);
     await page.keyboard.press("Enter");
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(4000);
 
     console.log("Logged in. Composing tweet...");
 
