@@ -88,6 +88,7 @@ async function postTweet(tweetText) {
     await page.waitForTimeout(4000);
 
     console.log("Logged in. Composing tweet...");
+    await page.screenshot({ path: "screenshot2.png" });
 
     // Klikni na compose
     await page.click('[data-testid="SideNav_NewTweet_Button"]');
