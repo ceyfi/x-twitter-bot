@@ -55,27 +55,35 @@ async function postTweet(tweetText) {
     await page.screenshot({ path: "screenshot.png" });
     console.log("Screenshot saved");
 
-    // Unesi email/username - klikni na polje u modalu (drugi input na stranici)
+    // Unesi email/username via JavaScript (zaobilazi mask overlay)
     await page.waitForSelector('input', { timeout: 15000 });
-    const inputs = page.locator('input');
-    const count = await inputs.count();
-    console.log("Found inputs:", count);
-    // Uzmi poslednji input (u modalu)
-    await inputs.last().click();
-    await inputs.last().fill(process.env.TWITTER_EMAIL);
+    await page.evaluate((email) => {
+      const inputs = document.querySelectorAll('input');
+      const emailInput = Array.from(inputs).find(i => i.autocomplete === 'username' || i.name === 'text');
+      if (emailInput) {
+        emailInput.focus();
+        emailInput.value = email;
+        emailInput.dispatchEvent(new Event('input', { bubbles: true }));
+        emailInput.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }, process.env.TWITTER_EMAIL);
+    await page.keyboard.press("Enter");
+    await page.waitForTimeout(2000);
     await page.keyboard.press("Enter");
     await page.waitForTimeout(2000);
 
-    // Ponekad Twitter traži username umesto emaila
-    const usernameInput = page.locator('input[name="text"]');
-    if (await usernameInput.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await usernameInput.fill(process.env.TWITTER_EMAIL.split("@")[0]);
-      await page.keyboard.press("Enter");
-      await page.waitForTimeout(2000);
-    }
-
-    // Unesi lozinku
-    await page.locator('input[name="password"]').fill(process.env.TWITTER_PASSWORD);
+    // Unesi lozinku via JavaScript
+    await page.waitForTimeout(2000);
+    await page.evaluate((password) => {
+      const inputs = document.querySelectorAll('input');
+      const passInput = Array.from(inputs).find(i => i.type === 'password' && !i.ariaHidden);
+      if (passInput) {
+        passInput.focus();
+        passInput.value = password;
+        passInput.dispatchEvent(new Event('input', { bubbles: true }));
+        passInput.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }, process.env.TWITTER_PASSWORD);
     await page.keyboard.press("Enter");
     await page.waitForTimeout(4000);
 
