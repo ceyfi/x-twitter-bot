@@ -2,9 +2,8 @@
   "name": "x-twitter-bot",
   "version": "1.0.0",
   "private": true,
-  "type": "module",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.0",
-    "playwright": "^1.44.0"
+    "twitter-api-v2": "^1.17.0"
   }
 }
