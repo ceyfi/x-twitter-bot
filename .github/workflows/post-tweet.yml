@@ -1,0 +1,29 @@
+name: Post Daily Tweet
+
+on:
+  schedule:
+    - cron: '0 9 * * *'  # Svaki dan u 9:00 UTC
+  workflow_dispatch:      # Dozvoli ručno pokretanje
+
+jobs:
+  tweet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+
+      - name: Post tweet
+        env:
+          TWITTER_EMAIL: ${{ secrets.TWITTER_EMAIL }}
+          TWITTER_PASSWORD: ${{ secrets.TWITTER_PASSWORD }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: node post-tweet.js
