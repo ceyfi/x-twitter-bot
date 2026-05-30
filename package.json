@@ -1,0 +1,9 @@
+{
+  "name": "x-twitter-bot",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "openai": "^4.47.1",
+    "twitter-api-v2": "^1.17.0"
+  }
+}
