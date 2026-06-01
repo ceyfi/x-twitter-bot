@@ -38,7 +38,6 @@ Bez spam hashtagova, bez emojija osim ako pristaju, kratke rečenice.
 - TWITTER_ACCESS_TOKEN
 - TWITTER_ACCESS_SECRET
 - ANTHROPIC_API_KEY
-- CRON_SECRET = marko-bot-2024
 
 ## Fajlovi
 - `api/post-tweet.js` — glavna logika (generisanje + objavljivanje)
