@@ -12,22 +12,32 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-const PERSONAS = [
-  "contrarian trader who questions popular narratives",
-  "macro observer focused on big picture trends",
-  "skeptical investor who's seen too many cycles",
-  "AI enthusiast watching how it intersects with finance",
-  "market psychologist focused on crowd behavior and sentiment",
-  "bitcoin-curious person who also watches traditional markets",
+const CORE_THEMES = [
+  "liquidity and how it drives everything",
+  "market psychology and crowd behavior",
+  "AI adoption and its effect on white collar work",
+  "bitcoin",
+  "how narratives form and collapse in markets",
 ];
 
-const TOPICS = [
-  "crypto market trends or Bitcoin/Ethereum price action",
-  "artificial intelligence and its impact on markets or jobs",
-  "stock market or macroeconomic conditions (Fed, inflation, earnings)",
-  "DeFi or Web3 — what's working and what isn't",
-  "trading psychology or investor behavior",
-  "the intersection of AI and crypto",
+const FORMATS = [
+  "observation",
+  "question — ask followers something that makes them think",
+  "contrarian take — challenge what everyone believes right now",
+  "prediction",
+  "mistake learned — something you got wrong and what it cost you",
+  "short story — one sentence story about something you witnessed in markets",
+  "unpopular opinion",
+  "mental model — a framework for thinking about markets",
+  "one sentence insight — brutally short",
+  "comparison — two things that seem different but aren't",
+];
+
+const LENGTHS = [
+  "very short (under 80 characters)",
+  "one sentence",
+  "two to three sentences",
+  "a question only — nothing else",
 ];
 
 const BANNED_PHRASES = [
@@ -43,7 +53,14 @@ const BANNED_PHRASES = [
   "to the moon",
   "buidl",
   "have fun staying poor",
+  "gm",
+  "wagmi",
+  "ngmi",
 ];
+
+function pick(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
 
 async function getRecentTweets() {
   try {
@@ -70,39 +87,39 @@ export default async function handler(req, res) {
   }
 
   try {
-    const topic = TOPICS[Math.floor(Math.random() * TOPICS.length)];
-    const persona = PERSONAS[Math.floor(Math.random() * PERSONAS.length)];
+    const theme = pick(CORE_THEMES);
+    const format = pick(FORMATS);
+    const length = pick(LENGTHS);
     const recentTweets = await getRecentTweets();
 
     const recentContext = recentTweets.length > 0
-      ? `\n\nYour recent tweets (do NOT repeat these ideas, topics or phrasing):\n${recentTweets.map((t, i) => `${i + 1}. ${t}`).join("\n")}`
+      ? `\nYour recent tweets — do NOT repeat these ideas, topics or phrasing:\n${recentTweets.map((t, i) => `${i + 1}. ${t}`).join("\n")}\n`
       : "";
 
     const message = await anthropic.messages.create({
       model: "claude-opus-4-5",
       max_tokens: 150,
-      system: `You are a real person who trades crypto and follows financial markets closely.
-You're not a bot, not a brand, not a newsletter — just someone who's been in markets for years and occasionally shares thoughts on Twitter.
+      system: `You are Alpha Guru (@AlphaGuruReal) — a real person who's been trading crypto and watching markets for years.
+You have a distinct voice and specific obsessions: liquidity, market psychology, AI replacing white collar jobs, bitcoin, and how narratives form and collapse.
+You're not a content creator. You share raw thoughts, not polished takes.
 
-Today write from the perspective of: ${persona}.
+Writing rules:
+- Lowercase most of the time
+- Skip punctuation when it feels natural
+- No hashtag spam (one max, often none)
+- No emojis unless it really fits
+- No clickbait openers
+- Sound like a person, not a brand
 
-Your writing style:
-- Casual and direct, like texting a friend who's also into markets
-- Sometimes bullish, sometimes skeptical, sometimes just observing
-- Lowercase sometimes, skip punctuation occasionally
-- No hashtag spam (max 1 hashtag, often none)
-- No emojis unless genuinely fitting
-- No "thread 🧵" or clickbait openers
-- Short sentences. Real opinions. Max 240 characters.
-
-Avoid these clichéd phrases at all costs: ${BANNED_PHRASES.join(", ")}`,
+Banned phrases (never use): ${BANNED_PHRASES.join(", ")}`,
       messages: [
         {
           role: "user",
-          content: `Write one tweet about: ${topic}.${recentContext}
-
-Sound like a real person. Keep it under 240 characters.
-Return ONLY the tweet text, nothing else.`,
+          content: `Theme: ${theme}
+Format: ${format}
+Length: ${length}
+${recentContext}
+Write the tweet. Return ONLY the tweet text, nothing else.`,
         },
       ],
     });
@@ -110,13 +127,14 @@ Return ONLY the tweet text, nothing else.`,
     const tweetText = message.content[0].text.trim();
     const tweet = await twitterClient.v2.tweet(tweetText);
 
-    console.log(`Posted as [${persona}]: ${tweetText}`);
+    console.log(`[${format}] [${length}]: ${tweetText}`);
 
     return res.status(200).json({
       success: true,
       tweet: tweetText,
-      persona,
-      topic,
+      format,
+      theme,
+      length,
       id: tweet.data.id,
     });
   } catch (error) {
