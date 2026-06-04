@@ -66,7 +66,7 @@ async function getRecentTweets() {
   try {
     const me = await twitterClient.v2.me();
     const tweets = await twitterClient.v2.userTimeline(me.data.id, {
-      max_results: 10,
+      max_results: 20,
       "tweet.fields": ["text"],
     });
     return tweets.data?.data?.map((t) => t.text) || [];
@@ -110,6 +110,7 @@ Writing rules:
 - No emojis unless it really fits
 - No clickbait openers
 - Sound like a person, not a brand
+- Vary sentence openings — avoid repeatedly starting with: "I think", "Feels like", "Most people", "Everyone", "The market"
 
 Banned phrases (never use): ${BANNED_PHRASES.join(", ")}`,
       messages: [
