@@ -4,6 +4,8 @@
 
 Automatizovani Twitter bot koji svaki dan objavljuje postove na nalogu @AlphaGuruReal bez ručnog rada. Bot simulira stvarnu osobu koja prati tržišta, kripto i AI — ne zvuči kao bot, ne ponavlja se, ima izgrađen identitet.
 
+Drugi deo: Reply agent koji pronalazi relevantne tweetove, generiše odgovore i šalje na Telegram na odobrenje.
+
 ---
 
 ## Tech stack
@@ -11,74 +13,84 @@ Automatizovani Twitter bot koji svaki dan objavljuje postove na nalogu @AlphaGur
 | Komponenta | Tehnologija |
 |---|---|
 | Hosting | Vercel (Hobby plan, besplatno) |
-| Cron job | Vercel Cron Jobs |
-| AI za pisanje | Claude API — claude-opus-4-5 (Anthropic) |
-| Twitter objava | Twitter API v2 (twitter-api-v2 npm paket) |
+| Cron job (post) | Vercel Cron Jobs |
+| Cron job (reply) | GitHub Actions |
+| AI za pisanje | Claude API — claude-opus-4-5 |
+| Twitter objava | Twitter API v2 (twitter-api-v2 npm) |
+| Slike | @napi-rs/canvas (Canvas API, server-side) |
+| Odobravanje | Telegram Bot (@alphaguru_approvals_bot) |
 | Repo | https://github.com/ceyfi/x-twitter-bot |
-| Runtime | Node.js (ESM modules) |
+| Runtime | Node.js ESM modules |
 
 ### Troškovi
 - Vercel: besplatno
 - Twitter API: Pay Per Use (~$5 kredita, traje godinama za 1 post/dan)
-- Claude API: ~$0.01-0.02 po postu (Anthropic console)
+- Claude API: ~$0.01-0.02 po postu
+- GitHub Actions: besplatno (2000 min/mesec)
+- Telegram: besplatno
 
 ---
 
-## Kako app radi
+## Deo 1: Daily post bot
+
+### Kako radi
 
 1. Vercel Cron Job poziva `/api/post-tweet` svaki dan u **9:00 UTC (11:00 CET)**
 2. Handler autentifikuje zahtev putem `CRON_SECRET` Bearer tokena
-3. Povlači poslednjih **20 tweetova** sa naloga (da se ne ponavlja)
-4. Nasumično bira **temu**, **format** i **dužinu** posta
-5. Šalje prompt Claude-u sa svim kontekstom
+3. Povlači poslednjih **20 tweetova** sa naloga (anti-repetition)
+4. Nasumično bira **temu**, **format** i **dužinu**
+5. Šalje prompt Claude-u
 6. Claude generiše tweet koji zvuči kao pravi čovek
-7. Tweet se objavljuje na Twitter v2 API
+7. **20% šansa za sliku** — generiše PNG grafiku (crna + zlatna) i postuje uz tekst
+8. Tweet se objavljuje na Twitter v2 API
 
-Bot se može i ručno pokrenuti:
+Ručno pokretanje:
 ```powershell
 Invoke-WebRequest -Uri "https://x-twitter-bot.vercel.app/api/post-tweet" -Headers @{Authorization="Bearer <CRON_SECRET>"} | Select-Object -ExpandProperty Content
 ```
 
+### Identitet — Alpha Guru
+
+Bot uvek piše kao `@AlphaGuruReal` — osoba koja trguje kriptom godinama, prati makro.
+
+**5 core tema:** Likvidnost · Psihologija tržišta · AI i white collar rad · Bitcoin · Narativni ciklusi
+
+**10 formata:** Observation · Question · Contrarian take · Prediction · Mistake learned · Short story · Unpopular opinion · Mental model · One sentence insight · Comparison
+
+**4 dužine:** Very short (<80 char) · One sentence · Two to three sentences · Question only
+
+**Anti-repetition:** Povlači poslednjih 20 tweetova i šalje Claude-u.
+
+**Banned phrases:** smart money, zoom out, wagmi, DYOR, to the moon, gm, itd.
+
 ---
 
-## Funkcionalnosti
+## Deo 2: Reply agent sa Telegram odobravanjem
 
-### Identitet — Alpha Guru
-Bot uvek piše kao `@AlphaGuruReal` — osoba koja trguje kriptom godinama, prati makro, opsednuta je likvidnošću i psihologijom tržišta.
+### Kako radi
 
-### 5 core tema (CORE_THEMES)
-- Likvidnost i kako ona pokreće sve
-- Psihologija tržišta i ponašanje gomile
-- AI adopcija i uticaj na white collar rad
-- Bitcoin
-- Kako se narativni formiraju i urušavaju
+1. GitHub Actions pokreće `reply-agent.js` **svakih 4 sata** (8, 12, 16, 20 UTC)
+2. Agent traži relevantne tweetove (bitcoin, AI, markets) od naloga sa 500+ followera
+3. Uzima top 3 po likes
+4. Claude generiše odgovor u Alpha Guru stilu za svaki
+5. Šalje na Telegram sa **inline dugmadima: ✅ Pošalji / ❌ Skip**
+6. Korisnik tapne dugme u Telegramu
+7. Telegram šalje callback na Vercel webhook `/api/telegram-webhook`
+8. Webhook parsira odgovor iz poruke i postuje reply na Twitter
 
-### 10 formata (FORMATS)
-- Observation
-- Question (provocira razmišljanje)
-- Contrarian take
-- Prediction
-- Mistake learned
-- Short story (jedna rečenica)
-- Unpopular opinion
-- Mental model
-- One sentence insight (brutalno kratko)
-- Comparison
+### Setup (jednom)
 
-### 4 dužine (LENGTHS)
-- Very short (ispod 80 karaktera)
-- One sentence
-- Two to three sentences
-- Question only
+**GitHub Secrets** (Settings → Secrets → Actions):
+- `TELEGRAM_BOT_TOKEN` = `8911496302:AAG_j4xA0rz75yZDzA8iEa9HJwjmubVXAns`
+- `TELEGRAM_CHAT_ID` = `6304760850`
 
-### Anti-repetition
-Bot povlači poslednjih 20 tweetova i šalje ih Claude-u sa instrukcijom da ne ponavlja ideje, teme ni formulacije.
+**Vercel env** (već postavljeno ako su ostale varijable tu):
+- `TELEGRAM_BOT_TOKEN` i `TELEGRAM_CHAT_ID` (za webhook)
 
-### Banned phrases
-Lista od 15 kripto/market klišea koje bot nikad ne koristi (smart money, zoom out, wagmi, DYOR, to the moon, itd.)
-
-### Varijacija openinga
-Claude ima instrukciju da ne počinje svaki tweet sa "I think", "Feels like", "Most people", "Everyone", "The market".
+**Registruj Telegram webhook** (jednom, u browser ili PowerShell):
+```
+https://api.telegram.org/bot8911496302:AAG_j4xA0rz75yZDzA8iEa9HJwjmubVXAns/setWebhook?url=https://x-twitter-bot.vercel.app/api/telegram-webhook
+```
 
 ---
 
@@ -87,57 +99,58 @@ Claude ima instrukciju da ne počinje svaki tweet sa "I think", "Feels like", "M
 ```
 x-twitter-bot/
 ├── api/
-│   └── post-tweet.js     # Glavna logika — generisanje + objava
-├── vercel.json           # Cron job konfiguracija (9:00 UTC daily)
-├── package.json          # Dependencies
-├── kontekst.md           # Kratki kontekst projekta
-└── project-overview.md   # Ovaj fajl
+│   ├── post-tweet.js          # Daily post — generisanje + objava
+│   └── telegram-webhook.js    # Prima callback od Telegrama, postuje reply
+├── .github/
+│   └── workflows/
+│       └── reply-agent.yml    # GitHub Actions cron svakih 4h
+├── reply-agent.js             # Traži tweetove, generiše reply, šalje na Telegram
+├── vercel.json                # Vercel cron config
+├── package.json               # Dependencies (ESM)
+├── kontekst.md                # Kratki kontekst
+└── project-overview.md        # Ovaj fajl
 ```
 
 ---
 
-## Environment variables (Vercel)
+## Environment variables
 
+### Vercel
 | Varijabla | Opis |
 |---|---|
 | TWITTER_CONSUMER_KEY | Twitter app consumer key |
 | TWITTER_CONSUMER_SECRET | Twitter app consumer secret |
-| TWITTER_ACCESS_TOKEN | OAuth access token (@AlphaGuruReal) |
+| TWITTER_ACCESS_TOKEN | OAuth access token |
 | TWITTER_ACCESS_SECRET | OAuth access token secret |
 | ANTHROPIC_API_KEY | Claude API ključ |
-| CRON_SECRET | Auth token za ručno pozivanje |
+| CRON_SECRET | Auth token za ručno pokretanje |
+| TELEGRAM_BOT_TOKEN | Bot token za webhook |
+| TELEGRAM_CHAT_ID | Tvoj chat ID za webhook |
+
+### GitHub Secrets (isti + Telegram)
+Sve gore + `TELEGRAM_BOT_TOKEN` i `TELEGRAM_CHAT_ID`
 
 ---
 
 ## Šta je urađeno
 
-- [x] Vercel API endpoint `/api/post-tweet`
-- [x] Vercel Cron Job — automatsko pokretanje svaki dan u 9:00 UTC
-- [x] Claude opus-4-5 integracija za generisanje teksta
-- [x] Twitter API v2 integracija za objavu
-- [x] Identitet — Alpha Guru persona u system promptu
-- [x] 5 core tema, 10 formata, 4 dužine — nasumičan izbor
-- [x] Anti-repetition — povlači poslednjih 20 tweetova
-- [x] Banned phrases lista
-- [x] Varijacija sentence openings
-- [x] OAuth autentifikacija za ručno pokretanje
-- [x] Rebranding naloga — bio, ime (Alpha Guru @AlphaGuruReal)
-- [x] AG logo dizajn (SVG, crna + zlatna)
-
----
+- [x] Vercel `/api/post-tweet` — dnevni post
+- [x] Vercel Cron Job — 9:00 UTC daily
+- [x] Claude opus-4-5 integracija
+- [x] Twitter API v2 — objava
+- [x] Alpha Guru persona — 5 tema, 10 formata, 4 dužine
+- [x] Anti-repetition (poslednih 20 tweetova)
+- [x] Banned phrases, varijacija openinga
+- [x] Slike uz postove — @napi-rs/canvas, crna+zlatna grafika, 20% šansa
+- [x] Reply agent — `reply-agent.js`
+- [x] GitHub Actions cron — svakih 4h
+- [x] Telegram bot integracija — inline keyboard ✅/❌
+- [x] Vercel webhook — `/api/telegram-webhook` postuje reply
 
 ## Šta nedostaje
 
-- [ ] Slike uz postove (20% šansa) — šablon sa AG logom + tekst
+- [ ] Setup Telegram webhook (jednom) — vidi Setup iznad
+- [ ] Dodati `TELEGRAM_BOT_TOKEN` i `TELEGRAM_CHAT_ID` u Vercel env
+- [ ] Dodati `TELEGRAM_BOT_TOKEN` i `TELEGRAM_CHAT_ID` u GitHub Secrets
 - [ ] 2 posta dnevno umesto 1
-- [ ] Reply na sopstveni tweet (mini thread)
-- [ ] Praćenje metrika (impressions, likes po formatu) da se favorizuju bolji formati
-- [ ] Weighted format selection — više question/contrarian ako dobijaju više reakcija
-
----
-
-## Sledeći koraci (prioritetno)
-
-1. **Slike** — napraviti AG šablon (crna pozadina, zlatna tipografija) i automatski generisati image uz ~20% tweetova
-2. **2 posta dnevno** — dodati drugi cron u 15:00 UTC
-3. **Metrike** — pratiti koji formati dobijaju najviše engagement-a i težinski ih favorizovati
+- [ ] Metrike — pratiti koji formati dobijaju najviše engagementa
