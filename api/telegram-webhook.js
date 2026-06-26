@@ -89,8 +89,9 @@ export default async function handler(req, res) {
 
         console.log(`Reply posted to tweet ${tweetId}: ${replyText}`);
       } catch (err) {
-        console.error("Twitter error:", err.message, err.data);
-        await answerCallback(cb.id, `Greška: ${err.message.slice(0, 50)}`);
+        const detail = JSON.stringify(err.data || err.message);
+        console.error("Twitter error:", detail);
+        await answerCallback(cb.id, `Greška: ${detail.slice(0, 180)}`);
       }
 
       return res.status(200).json({ ok: true });
