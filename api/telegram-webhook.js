@@ -75,7 +75,10 @@ export default async function handler(req, res) {
 
       try {
         // Pošalji reply na Twitter
-        await twitterClient.v2.reply(replyText, tweetId);
+        await twitterClient.v2.tweet({
+          text: replyText,
+          reply: { in_reply_to_tweet_id: tweetId },
+        });
 
         await answerCallback(cb.id, "Poslato! ✅");
 
