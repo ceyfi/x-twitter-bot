@@ -74,10 +74,11 @@ export default async function handler(req, res) {
       }
 
       try {
-        // Pošalji reply na Twitter
+        // Quote tweet umesto reply (reply zahteva da si u konverzaciji)
+        const tweetUrl = `https://twitter.com/i/web/status/${tweetId}`;
         await twitterClient.v2.tweet({
           text: replyText,
-          reply: { in_reply_to_tweet_id: tweetId },
+          quote_tweet_id: tweetId,
         });
 
         await answerCallback(cb.id, "Poslato! ✅");
