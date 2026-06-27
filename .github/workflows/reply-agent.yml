@@ -1,10 +1,7 @@
 name: Reply Agent
 
 on:
-  schedule:
-    # Svakih 4 sata: 8, 12, 16, 20 UTC
-    - cron: "0 8,12,16,20 * * *"
-  workflow_dispatch: # Ručno pokretanje
+  workflow_dispatch: # Samo ručno pokretanje (cron isključen)
 
 jobs:
   reply:
