@@ -125,13 +125,13 @@ function generateQuoteImage(tweetText) {
 
   // Navodnici
   ctx.fillStyle = "#C9A84C22";
-  ctx.font = "bold 180px Georgia, serif";
+  ctx.font = "bold 180px DejaVu Sans, Liberation Sans, sans-serif";
   ctx.textAlign = "left";
   ctx.fillText("“", 60, 240);
 
   // Tweet tekst
   ctx.fillStyle = "#E8E8E8";
-  ctx.font = "bold 46px Georgia, serif";
+  ctx.font = "bold 46px DejaVu Sans, Liberation Sans, sans-serif";
   ctx.textAlign = "center";
   wrapText(ctx, tweetText, width / 2, height / 2 - 20, width - 200, 66);
 
@@ -145,12 +145,12 @@ function generateQuoteImage(tweetText) {
 
   // AG brending
   ctx.fillStyle = "#C9A84C";
-  ctx.font = "bold 22px Georgia, serif";
+  ctx.font = "bold 22px DejaVu Sans, Liberation Sans, sans-serif";
   ctx.letterSpacing = "4px";
   ctx.fillText("ALPHA GURU", width / 2, height - 78);
 
   ctx.fillStyle = "#666666";
-  ctx.font = "16px Georgia, serif";
+  ctx.font = "16px DejaVu Sans, Liberation Sans, sans-serif";
   ctx.fillText("@AlphaGuruReal  ·  Markets · Crypto · AI", width / 2, height - 52);
 
   return canvas.toBuffer("image/png");
