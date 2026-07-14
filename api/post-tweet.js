@@ -185,7 +185,7 @@ export default async function handler(req, res) {
     const format = pick(FORMATS);
     const length = pick(LENGTHS);
     const recentTweets = await getRecentTweets();
-    const includeImage = Math.random() < 0.2; // 20% šansa za sliku
+    const includeImage = false; // Isključeno dok se ne sredi font
 
     const recentContext = recentTweets.length > 0
       ? `\nYour recent tweets — do NOT repeat these ideas, topics or phrasing:\n${recentTweets.map((t, i) => `${i + 1}. ${t}`).join("\n")}\n`
