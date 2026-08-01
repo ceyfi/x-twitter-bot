@@ -15,6 +15,13 @@ const anthropic = new Anthropic({
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
 const SEARCH_QUERIES = [
   "bitcoin liquidity -is:retweet lang:en",
   "market psychology trading -is:retweet lang:en",
@@ -40,19 +47,19 @@ async function searchTweets(query) {
 
 async function generateReply(originalTweet, authorUsername) {
   const message = await anthropic.messages.create({
-    model: "claude-opus-4-5",
+    model: process.env.ANTHROPIC_MODEL || "claude-sonnet-5",
     max_tokens: 120,
     system: `You are Alpha Guru (@AlphaGuruReal) — a crypto and markets person who's been in the game for years.
 You're leaving a reply on someone's tweet. Be genuine, add value, spark conversation.
 
 Rules:
-- Max 200 characters
-- Sound like a real person, not a brand
-- Add your perspective, don't just agree
-- Sometimes ask a follow-up question
-- Lowercase mostly, casual tone
-- No hashtags
-- No "great point!" or "totally agree" — be specific`,
+- Max 220 characters
+- Respond to a specific claim or fact in the original tweet
+- Add one concrete implication, counterpoint, or precise question
+- Never invent personal experience, trades, results, conversations, or credentials
+- No generic praise, motivational advice, slogans, hashtags, or engagement bait
+- Do not paraphrase the original tweet
+- If there is no useful reply, return exactly: SKIP`,
     messages: [
       {
         role: "user",
@@ -65,7 +72,7 @@ Return ONLY the reply text, nothing else.`,
     ],
   });
 
-  return message.content[0].text.trim();
+  return message.content[0].text.trim().replace(/^['\"]|['\"]$/g, "");
 }
 
 async function sendTelegramWithButtons(text, tweetId) {
@@ -88,7 +95,11 @@ async function sendTelegramWithButtons(text, tweetId) {
       },
     }),
   });
-  return res.json();
+  const result = await res.json();
+  if (!res.ok || !result.ok) {
+    throw new Error(`Telegram send failed: ${result.description || res.status}`);
+  }
+  return result;
 }
 
 async function main() {
@@ -131,15 +142,19 @@ async function main() {
     const likes = tweet.public_metrics?.like_count || 0;
 
     const reply = await generateReply(tweet.text, username);
+    if (reply === "SKIP" || reply.length > 280) {
+      console.log(`Skipped tweet ${tweet.id}: no useful candidate`);
+      continue;
+    }
     const tweetUrl = `https://twitter.com/${username}/status/${tweet.id}`;
 
     // Format koji webhook može da parsira
     const msg =
       `🐦 <b>Reply suggestion</b>\n\n` +
-      `<b>@${username}</b> · ${followers.toLocaleString()} followers · ${likes} likes\n\n` +
-      `<i>${tweet.text.slice(0, 220)}${tweet.text.length > 220 ? "..." : ""}</i>\n\n` +
+      `<b>@${escapeHtml(username)}</b> · ${followers.toLocaleString()} followers · ${likes} likes\n\n` +
+      `<i>${escapeHtml(tweet.text.slice(0, 220))}${tweet.text.length > 220 ? "..." : ""}</i>\n\n` +
       `💬 <b>Predlog odgovora:</b>\n` +
-      `${reply}\n\n` +
+      `${escapeHtml(reply)}\n\n` +
       `🔗 <a href="${tweetUrl}">Otvori tweet</a>`;
 
     await sendTelegramWithButtons(msg, tweet.id);

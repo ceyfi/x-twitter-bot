@@ -13,12 +13,12 @@
 
 ## Tech
 - Node.js ESM (type: "module" u package.json)
-- twitter-api-v2, @anthropic-ai/sdk, @napi-rs/canvas
+- twitter-api-v2, @anthropic-ai/sdk, sharp
 - OAuth 1.0a (ne OAuth 2.0)
 
 ## Prioritet sada
-- Obriši mrtav kod: stari Playwright `.github/workflows/` + root `post-tweet.js`
-  + ukloni `TWITTER_EMAIL`/`TWITTER_PASSWORD` iz GitHub secrets (rizik, nepotrebno).
-- Zatim: ubaci live kontekst pre generisanja (BTC cena / crypto RSS) da persona bude „u toku".
+- Rotirati kompromitovani Telegram token.
+- Postaviti `TELEGRAM_WEBHOOK_SECRET` i ponovo registrovati sigurni webhook.
+- Deployovati i testirati generate → Telegram approval → X post tok.
 
 > Globalna pravila su u `~/.claude/CLAUDE.md`. Pun kontekst: `HANDOFF.md` u ovom folderu.
