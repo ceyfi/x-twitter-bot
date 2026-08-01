@@ -37,10 +37,17 @@ function extractDailyCandidate(messageText, candidateIndex) {
   if (!Number.isInteger(candidateIndex) || candidateIndex < 0 || candidateIndex > 2) {
     return null;
   }
+  const plainText = messageText
+    .replace(/<[^>]*>/g, "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
   const number = candidateIndex + 1;
   const nextSection = number < 3 ? `Predlog ${number + 1}:` : "Market snapshot:";
   const pattern = new RegExp(`Predlog ${number}:\\n([\\s\\S]+?)\\n\\n${nextSection}`);
-  const match = messageText.match(pattern);
+  const match = plainText.match(pattern);
   return match?.[1]?.trim() || null;
 }
 
