@@ -8,6 +8,7 @@ Aktivni sistem je Node.js ESM projekat na Vercelu za `@AlphaGuruReal`.
 - `api/telegram-webhook.js`: proverava Telegram secret header, chat ID i rok od 24 sata; kandidat 3 preuzima Telegram photo i uploaduje je na X, kandidati 1/2 su text-only, a odobren reply-agent kandidat je quote tweet.
 - `lib/content-validation.js` i `test/content-validation.test.js`: čista validacija sadržaja i unit testovi za kritične parsere/granice.
 - `reply-agent.js`: traži aktuelne objave i šalje samo konkretne predloge; GitHub workflow je manual-only.
+- `auto-post.js`: GitHub Action u 19:00 Europe/Belgrade svakog drugog dana proverava poslednja 24h; objavljuje samo provereni text kandidat ako nalog nema novu objavu. X read greška prekida objavu.
 - Stari Playwright poster, screenshot i njegov workflow su uklonjeni.
 
 ## Obavezno pre završetka
@@ -17,6 +18,7 @@ Aktivni sistem je Node.js ESM projekat na Vercelu za `@AlphaGuruReal`.
 3. Pokrenuti `npm run telegram:webhook` sa novim tokenom i `TELEGRAM_WEBHOOK_SECRET` u lokalnom environmentu.
 4. U GitHub secrets ukloniti stare `TWITTER_EMAIL` i `TWITTER_PASSWORD` vrednosti.
 5. Ručno potvrditi kandidat 3 sa slikom i jedan reply/quote kandidat pre uključivanja bilo kakvog reply crona.
+6. Proveriti da aktuelni X/Anthropic/Telegram secrets postoje i u GitHub Actions za auto fallback.
 
 ## Namerno nije urađeno
 

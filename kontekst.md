@@ -6,6 +6,8 @@ Daily bot ne objavljuje sam. Uzima aktuelne BTC podatke sa CoinGecko, pravi nume
 
 Reply agent je trenutno manual-only GitHub Action. Predlozi takođe zahtevaju Telegram odobrenje.
 
+Auto fallback radi kroz GitHub Actions u 19:00 po Beogradu svakog drugog dana. Ako nalog nema objavu u prethodna 24 sata, objavljuje najbolji provereni text kandidat; nikada automatski ne objavljuje sliku.
+
 Prioriteti:
 
 1. Rotirati ranije procureli Telegram token.

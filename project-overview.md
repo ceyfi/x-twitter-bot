@@ -20,6 +20,14 @@ Mali serverless sistem koji priprema konkretne X objave za `@AlphaGuruReal` i tr
 
 Odobrena reakcija se trenutno objavljuje kao quote tweet, ne kao direktan reply.
 
+## Automatski fallback
+
+GitHub Action pokreće proveru u 19:00 po vremenu `Europe/Belgrade`, uz automatsko
+prilagođavanje letnjem/zimskom računanju vremena. Svakog drugog dana, počev od
+2026-08-02, proverava X timeline. Ako postoji objava u prethodna 24 sata, ne radi
+ništa. Ako je nema, uzima sveže podatke i automatski objavljuje samo najbolji
+provereni text kandidat. Greška X timeline provere prekida objavu (fail closed).
+
 ## Sigurnost
 
 - Svi ključevi su isključivo u Vercel/GitHub secrets.
@@ -63,7 +71,9 @@ api/telegram-webhook.js       odobravanje, Telegram photo download i X media upl
 lib/content-validation.js     validacija brojki, parseri i 24h approval pravilo
 test/content-validation.test.js
 reply-agent.js                ručno traženje quote/reply prilika
+auto-post.js                  svaki drugi dan: siguran text-only fallback
 .github/workflows/reply-agent.yml
+.github/workflows/auto-post-fallback.yml
 vercel.json                   daily cron
 ```
 

@@ -31,7 +31,7 @@ function formatUsd(value) {
   }).format(value);
 }
 
-async function fetchMarketSnapshot() {
+export async function fetchMarketSnapshot() {
   const response = await fetch(COINGECKO_URL, {
     headers: { Accept: "application/json", "User-Agent": "AlphaGuruBot/1.0" },
     signal: AbortSignal.timeout(8000),
@@ -146,7 +146,7 @@ Hard rules:
   return parseCandidates(raw);
 }
 
-async function generateCandidates(snapshot, recentTweets) {
+export async function generateCandidates(snapshot, recentTweets) {
   const recentContext = recentTweets.length
     ? recentTweets.map((tweet, index) => `${index + 1}. ${tweet}`).join("\n")
     : "No recent tweets available.";
@@ -175,7 +175,10 @@ function fallbackRecommendation(candidates) {
   };
 }
 
-async function generateRecommendation(candidates, snapshot) {
+export async function generateRecommendation(candidates, snapshot) {
+  if (!Array.isArray(candidates) || candidates.length < 2 || candidates.length > 3) {
+    throw new Error("Recommendation requires two or three candidates");
+  }
   const fallback = fallbackRecommendation(candidates);
   try {
     const message = await anthropic.messages.create({
@@ -184,7 +187,7 @@ async function generateRecommendation(candidates, snapshot) {
       system: `You are the editor for a small bitcoin/markets account. Compare three candidate posts using the verified market data.
 Pick the one with the clearest, most falsifiable insight and least unsupported inference.
 Return exactly two lines:
-PICK: 1 or 2 or 3
+PICK: ${candidates.map((_, index) => index + 1).join(" or ")}
 WHY: one concise reason under 120 characters
 Write the WHY value in Serbian.
 Do not rewrite the posts.`,
@@ -199,7 +202,7 @@ Do not rewrite the posts.`,
       .filter((block) => typeof block.text === "string")
       .map((block) => block.text)
       .join("\n");
-    const pickMatch = raw.match(/PICK\s*:\s*([123])/i);
+    const pickMatch = raw.match(new RegExp(`PICK\\s*:\\s*([1-${candidates.length}])`, "i"));
     const whyMatch = raw.match(/WHY\s*:\s*([^\n]+)/i);
     if (!pickMatch || !whyMatch) return fallback;
     return {
@@ -260,7 +263,7 @@ export async function generateChart(snapshot) {
   return sharp(Buffer.from(svg)).png().toBuffer();
 }
 
-async function telegramRequest(method, body) {
+export async function telegramRequest(method, body) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const response = await fetch(`${TELEGRAM_API}/bot${token}/${method}`, {
     method: "POST",
