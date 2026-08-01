@@ -1,5 +1,10 @@
 import { timingSafeEqual } from "node:crypto";
 import { TwitterApi } from "twitter-api-v2";
+import {
+  extractDailyCandidate,
+  extractQuoteCandidate,
+  isApprovalFresh,
+} from "../lib/content-validation.js";
 
 const twitterClient = new TwitterApi({
   appKey: process.env.TWITTER_CONSUMER_KEY,
@@ -31,29 +36,6 @@ async function telegramRequest(method, body) {
     throw new Error(`Telegram ${method} failed: ${result.description || response.status}`);
   }
   return result;
-}
-
-function extractDailyCandidate(messageText, candidateIndex) {
-  if (!Number.isInteger(candidateIndex) || candidateIndex < 0 || candidateIndex > 2) {
-    return null;
-  }
-  const plainText = messageText
-    .replace(/<[^>]*>/g, "")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'");
-  const number = candidateIndex + 1;
-  const nextSection = number < 3 ? `Predlog ${number + 1}:` : "Market snapshot:";
-  const pattern = new RegExp(`Predlog ${number}:\\n([\\s\\S]+?)\\n\\n${nextSection}`);
-  const match = plainText.match(pattern);
-  return match?.[1]?.trim() || null;
-}
-
-function extractQuoteCandidate(messageText) {
-  const match = messageText.match(/Predlog odgovora:\n([\s\S]+?)\n\n(?:🔗|Otvori tweet)/);
-  return match?.[1]?.trim() || null;
 }
 
 async function downloadTelegramPhoto(photoSizes) {
@@ -128,6 +110,12 @@ export default async function handler(req, res) {
   const [action, target, candidateIndex, mediaType] = String(cb.data || "").split(":");
 
   try {
+    if (!isApprovalFresh(cb.message?.date)) {
+      await answerCallback(cb.id, "Predlog je stariji od 24 sata");
+      await markHandled(chatId, messageId, messageText, "⌛ Predlog je istekao", hasPhoto);
+      return res.status(200).json({ ok: false, expired: true });
+    }
+
     if (action === "skip") {
       await answerCallback(cb.id, "Preskočeno");
       await markHandled(chatId, messageId, messageText, "❌ Preskočeno", hasPhoto);

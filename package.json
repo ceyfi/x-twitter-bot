@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "test": "node --test",
     "telegram:webhook": "node scripts/register-telegram-webhook.js"
   },
   "dependencies": {

@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import sharp from "sharp";
+import { parseCandidates, selectCandidates } from "../lib/content-validation.js";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -13,15 +14,6 @@ const FORMATS = [
   "a falsifiable prediction with a condition",
   "a useful question tied to today's data",
   "a comparison that explains the current move",
-];
-
-const BANNED_PATTERNS = [
-  /(?:most people|everyone|nobody) (?:think|thinks|believe|believes|realizes?)/i,
-  /the (?:real|biggest) (?:lesson|mistake|risk|opportunity|question) (?:is|was)/i,
-  /(?:isn't|is not) .+[,;—-]+ (?:it's|it is)/i,
-  /(?:looks?|seems?) .+ until you realize/i,
-  /(?:i watched|i spent|i held|i learned|my biggest mistake|cost me)/i,
-  /(?:smart money|zoom out|this cycle is different|we are still early|dyor|to the moon|wagmi|ngmi)/i,
 ];
 
 function escapeHtml(value) {
@@ -86,11 +78,13 @@ async function fetchMarketSnapshot() {
 }
 
 function snapshotText(snapshot) {
+  const rangePercent = ((snapshot.high7d - snapshot.low7d) / snapshot.low7d) * 100;
   return [
     `BTC price: ${formatUsd(snapshot.price)}`,
     `24h change: ${snapshot.change24h.toFixed(2)}%`,
     `7d change: ${snapshot.change7d.toFixed(2)}%`,
     `7d range: ${formatUsd(snapshot.low7d)} to ${formatUsd(snapshot.high7d)}`,
+    `7d range width: ${rangePercent.toFixed(2)}%`,
     `24h volume: ${formatUsd(snapshot.volume24h)}`,
     `market cap: ${formatUsd(snapshot.marketCap)}`,
     `data time: ${snapshot.updatedAt.toISOString()}`,
@@ -120,64 +114,10 @@ async function getRecentTweets() {
   }
 }
 
-function parseCandidates(raw) {
-  const tagged = [...raw.matchAll(/<tweet>([\s\S]*?)<\/tweet>/gi)]
-    .map((match) => match[1].trim().replace(/^['\"]|['\"]$/g, ""))
-    .filter(Boolean);
-
-  if (tagged.length) return tagged;
-
-  // Also accept a JSON array if the model chooses structured output.
-  try {
-    const parsed = JSON.parse(raw.trim());
-    if (Array.isArray(parsed)) {
-      const jsonCandidates = parsed
-        .map((item) => (typeof item === "string" ? item : item?.text))
-        .filter(Boolean);
-      if (jsonCandidates.length) return jsonCandidates;
-    }
-  } catch {
-    // The prompt does not require JSON; continue with plain-text parsing.
-  }
-
-  // Sonnet sometimes omits wrappers and writes numbered paragraphs instead.
-  const numbered = raw
-    .split(/(?:^|\n)\s*(?:(?:candidate|tweet)\s*)?\d+[.):\-]\s*/i)
-    .map((block) => block.trim())
-    .filter(Boolean);
-  if (numbered.length >= 3) return numbered;
-
-  return raw
-    .split(/\r?\n\s*\n|\s*---+\s*/)
-    .map((block) => block.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "").trim())
-    .map((block) => block.replace(/^['\"]|['\"]$/g, ""))
-    .filter(Boolean);
-}
-
-function validateCandidate(text, snapshot) {
-  if (text.length < 35 || text.length > 210) return false;
-  if (BANNED_PATTERNS.some((pattern) => pattern.test(text))) return false;
-
-  const priceAnchor = Math.round(snapshot.price).toLocaleString("en-US");
-  const changeAnchor = Math.abs(snapshot.change24h).toFixed(1);
-  const weeklyAnchor = Math.abs(snapshot.change7d).toFixed(1);
-  return (
-    text.includes(priceAnchor) ||
-    text.includes(`${changeAnchor}%`) ||
-    text.includes(`${weeklyAnchor}%`) ||
-    /\d+(?:\.\d+)?%/.test(text) ||
-    /\$\s?\d{2,3}(?:,\d{3})+/.test(text)
-  );
-}
-
-async function generateCandidates(snapshot, recentTweets) {
-  const recentContext = recentTweets.length
-    ? recentTweets.map((tweet, index) => `${index + 1}. ${tweet}`).join("\n")
-    : "No recent tweets available.";
-
+async function requestCandidateBatch(snapshot, recentContext, retry = false) {
   const message = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: 650,
+    max_tokens: 1000,
     system: `You write for @AlphaGuruReal, a small account about bitcoin, markets and AI.
 
 The account must earn attention through concrete information, not fake wisdom.
@@ -190,81 +130,35 @@ Hard rules:
 - No hashtags, engagement bait, fake certainty or unsupported price targets.
 - Plain English. Natural capitalization is allowed. Maximum 210 characters.
 - Each candidate must make a materially different point.
-- Candidate 3 accompanies a 7-day BTC chart. It must discuss the 7-day move or range and make sense with that chart.
-- Return exactly three candidates, each wrapped in <tweet>...</tweet>. Nothing else.`,
+- Use only dollar values and percentages present in the supplied snapshot. Do not calculate or invent new targets.
+- Candidates 1-4 are general market posts.
+- Candidates 5-6 accompany a 7-day BTC chart and must discuss the 7-day move or range.
+- Return exactly six candidates, each wrapped in <tweet>...</tweet>. Nothing else.`,
     messages: [
       {
         role: "user",
-        content: `Current verified market snapshot:\n${snapshotText(snapshot)}\n\nUse three different formats from this list:\n${FORMATS.join("\n")}\n\nDo not repeat these recent posts:\n${recentContext}`,
+        content: `Current verified market snapshot:\n${snapshotText(snapshot)}\n\nUse different formats from this list:\n${FORMATS.join("\n")}\n\nDo not repeat these recent posts:\n${recentContext}${retry ? "\n\nThe previous batch did not contain enough factually valid candidates. Follow every numeric rule exactly." : ""}`,
       },
     ],
   });
 
   const raw = message.content.find((block) => block.type === "text")?.text || "";
-  const parsedCandidates = [...new Set(parseCandidates(raw))];
-  let candidates = parsedCandidates.filter((candidate) =>
-    validateCandidate(candidate, snapshot),
-  );
+  return parseCandidates(raw);
+}
 
-  // Keep the human approval gate useful even when the model formats a number
-  // as e.g. "117k" instead of "$117,000". Length and banned-pattern checks
-  // still apply; the Telegram reviewer remains the final content filter.
-  if (candidates.length < 3) {
-    const safeFallback = parsedCandidates.filter(
-      (candidate) =>
-        candidate.length >= 35 &&
-        candidate.length <= 210 &&
-        !BANNED_PATTERNS.some((pattern) => pattern.test(candidate)),
-    );
-    if (safeFallback.length >= 3) {
-      candidates = safeFallback.slice(0, 3);
-      console.warn("Using safe candidate fallback after strict market-anchor validation");
-    }
+async function generateCandidates(snapshot, recentTweets) {
+  const recentContext = recentTweets.length
+    ? recentTweets.map((tweet, index) => `${index + 1}. ${tweet}`).join("\n")
+    : "No recent tweets available.";
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const batch = await requestCandidateBatch(snapshot, recentContext, attempt > 0);
+    const candidates = selectCandidates(batch, snapshot);
+    if (candidates) return candidates;
+    console.warn(`Claude candidate batch ${attempt + 1} failed factual validation`);
   }
 
-  if (candidates.length === 3) return candidates;
-
-  console.warn(`Batch candidate format failed (${candidates.length}/3); using single-candidate fallback`);
-  const fallbackFormats = [
-    "a direct observation about what today's BTC move may be pricing in",
-    "a falsifiable take with one condition that would prove it wrong",
-    "a chart-led observation about the 7-day BTC move or range",
-  ];
-  const fallbackCandidates = [];
-
-  for (const format of fallbackFormats) {
-    const single = await anthropic.messages.create({
-      model: MODEL,
-      max_tokens: 140,
-      system: `Write one useful X post for @AlphaGuruReal.
-Never invent personal experience or credentials. No generic wisdom, slogans, hashtags, price targets or fake certainty.
-Use the verified BTC data below. Include at least one number from it. Keep the post between 35 and 210 characters.
-Return only the post text, with no quotes, labels or explanation.`,
-      messages: [{
-        role: "user",
-        content: `Format: ${format}\n\nVerified market data:\n${snapshotText(snapshot)}`,
-      }],
-    });
-    const text = single.content
-      .filter((block) => typeof block.text === "string")
-      .map((block) => block.text)
-      .join(" ")
-      .trim()
-      .split(/\r?\n/)[0]
-      .replace(/^['\"]|['\"]$/g, "");
-    if (
-      text.length >= 35 &&
-      text.length <= 210 &&
-      !BANNED_PATTERNS.some((pattern) => pattern.test(text))
-    ) {
-      fallbackCandidates.push(text);
-    }
-  }
-
-  if (fallbackCandidates.length !== 3) {
-    throw new Error(`Claude returned ${fallbackCandidates.length} valid candidates after fallback`);
-  }
-  return fallbackCandidates;
+  throw new Error("Claude did not return two valid text candidates and one valid chart candidate");
 }
 
 function fallbackRecommendation(candidates) {
@@ -292,6 +186,7 @@ Pick the one with the clearest, most falsifiable insight and least unsupported i
 Return exactly two lines:
 PICK: 1 or 2 or 3
 WHY: one concise reason under 120 characters
+Write the WHY value in Serbian.
 Do not rewrite the posts.`,
       messages: [{
         role: "user",
@@ -377,6 +272,16 @@ async function telegramRequest(method, body) {
     throw new Error(`Telegram ${method} failed: ${result.description || response.status}`);
   }
   return result;
+}
+
+async function sendFailureAlert(error) {
+  const safeMessage = String(error?.message || "Unknown error")
+    .replace(/https?:\/\/\S+/g, "[url]")
+    .slice(0, 180);
+  await telegramRequest("sendMessage", {
+    chat_id: process.env.TELEGRAM_CHAT_ID,
+    text: `⚠️ Daily kandidati nisu generisani.\n${safeMessage}`,
+  });
 }
 
 async function sendForApproval(candidates, snapshot, chartBuffer, recommendation) {
@@ -466,6 +371,9 @@ export default async function handler(req, res) {
     });
   } catch (error) {
     console.error("Daily candidate error:", error);
+    await sendFailureAlert(error).catch((alertError) =>
+      console.warn("Could not send Telegram failure alert:", alertError.message),
+    );
     return res.status(500).json({ error: error.message });
   }
 }

@@ -1,5 +1,6 @@
 import { TwitterApi } from "twitter-api-v2";
 import Anthropic from "@anthropic-ai/sdk";
+import { isUsefulReply } from "./lib/content-validation.js";
 
 const twitterClient = new TwitterApi({
   appKey: process.env.TWITTER_CONSUMER_KEY,
@@ -72,7 +73,9 @@ Return ONLY the reply text, nothing else.`,
     ],
   });
 
-  return message.content[0].text.trim().replace(/^['\"]|['\"]$/g, "");
+  return (message.content.find((block) => block.type === "text")?.text || "")
+    .trim()
+    .replace(/^['\"]|['\"]$/g, "");
 }
 
 async function sendTelegramWithButtons(text, tweetId) {
@@ -142,7 +145,7 @@ async function main() {
     const likes = tweet.public_metrics?.like_count || 0;
 
     const reply = await generateReply(tweet.text, username);
-    if (reply === "SKIP" || reply.length > 280) {
+    if (!isUsefulReply(reply)) {
       console.log(`Skipped tweet ${tweet.id}: no useful candidate`);
       continue;
     }

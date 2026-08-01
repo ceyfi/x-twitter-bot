@@ -1,11 +1,20 @@
-const token = process.env.TELEGRAM_BOT_TOKEN;
-const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
+import { createInterface } from "node:readline/promises";
+
+let token = process.env.TELEGRAM_BOT_TOKEN;
+let secret = process.env.TELEGRAM_WEBHOOK_SECRET;
 const webhookUrl =
   process.env.TELEGRAM_WEBHOOK_URL ||
   "https://x-twitter-bot.vercel.app/api/telegram-webhook";
 
 if (!token || !secret) {
-  console.error("Missing TELEGRAM_BOT_TOKEN or TELEGRAM_WEBHOOK_SECRET");
+  const prompt = createInterface({ input: process.stdin, output: process.stdout });
+  if (!token) token = (await prompt.question("Nalepi Telegram bot token: ")).trim();
+  if (!secret) secret = (await prompt.question("Nalepi isti webhook secret koji je u Vercelu: ")).trim();
+  prompt.close();
+}
+
+if (!/^\d+:[A-Za-z0-9_-]{20,}$/.test(token)) {
+  console.error("Telegram bot token nema očekivani format");
   process.exit(1);
 }
 

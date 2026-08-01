@@ -7,11 +7,12 @@ Mali serverless sistem koji priprema konkretne X objave za `@AlphaGuruReal` i tr
 1. Vercel cron poziva `GET /api/post-tweet` u 09:00 UTC.
 2. Endpoint proverava obavezni `CRON_SECRET`.
 3. CoinGecko daje aktuelnu BTC cenu, 24h/7d promenu, volumen, market cap i 7d sparkline.
-4. Claude pravi tačno tri različita predloga zasnovana na tim podacima.
-5. Lokalna validacija odbacuje predugačke, generičke ili izmišljene lične priče.
+4. Claude pravi grupu različitih predloga zasnovanih na tim podacima; kod bira dve tekstualne i jednu chart varijantu.
+5. Lokalna validacija odbacuje predugačke, generičke i numerički nepotvrđene tvrdnje.
 6. Sva tri predloga i preview 7-day BTC charta stižu u jednoj Telegram poruci. Ništa se ne objavljuje automatski.
 7. Kandidati 1 i 2 su text-only. Kandidat 3 je napisan uz chart i objavljuje se sa slikom.
 8. Dugme **Objavi 1/2/3** šalje jedan izabrani post na X i uklanja sva dugmad.
+9. Telegram odobrenje važi 24 sata. Greška daily ciklusa šalje upozorenje u isti chat.
 
 ## Reply/quote tok
 
@@ -49,8 +50,8 @@ Iste X, Anthropic i Telegram varijable koje koristi `reply-agent.js`.
 ## Registracija sigurnog Telegram webhooka
 
 Posle postavljanja Vercel env varijabli lokalno postaviti novi token i secret u
-environment, pa pokrenuti `npm run telegram:webhook`. Skripta šalje token u telu
-zahteva i ne zahteva njegovo upisivanje u komandu ili dokumentaciju.
+environment, pa pokrenuti `npm run telegram:webhook`. Ako lokalne promenljive nisu
+postavljene, skripta sama pita za token i secret. Vrednosti se ne upisuju u fajl ili Git.
 
 `TELEGRAM_WEBHOOK_URL` je opciona; podrazumevani URL je produkcioni Vercel webhook.
 
@@ -59,6 +60,8 @@ zahteva i ne zahteva njegovo upisivanje u komandu ili dokumentaciju.
 ```text
 api/post-tweet.js             live podaci + 3 predloga + generisanje PNG charta
 api/telegram-webhook.js       odobravanje, Telegram photo download i X media upload
+lib/content-validation.js     validacija brojki, parseri i 24h approval pravilo
+test/content-validation.test.js
 reply-agent.js                ručno traženje quote/reply prilika
 .github/workflows/reply-agent.yml
 vercel.json                   daily cron
