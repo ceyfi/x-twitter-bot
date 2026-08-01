@@ -155,7 +155,7 @@ function parseCandidates(raw) {
 }
 
 function validateCandidate(text, snapshot) {
-  if (text.length < 35 || text.length > 240) return false;
+  if (text.length < 35 || text.length > 210) return false;
   if (BANNED_PATTERNS.some((pattern) => pattern.test(text))) return false;
 
   const priceAnchor = Math.round(snapshot.price).toLocaleString("en-US");
@@ -213,7 +213,7 @@ Hard rules:
     const safeFallback = parsedCandidates.filter(
       (candidate) =>
         candidate.length >= 35 &&
-        candidate.length <= 240 &&
+        candidate.length <= 210 &&
         !BANNED_PATTERNS.some((pattern) => pattern.test(candidate)),
     );
     if (safeFallback.length >= 3) {
@@ -238,7 +238,7 @@ Hard rules:
       max_tokens: 140,
       system: `Write one useful X post for @AlphaGuruReal.
 Never invent personal experience or credentials. No generic wisdom, slogans, hashtags, price targets or fake certainty.
-Use the verified BTC data below. Include at least one number from it. Keep the post between 35 and 240 characters.
+Use the verified BTC data below. Include at least one number from it. Keep the post between 35 and 210 characters.
 Return only the post text, with no quotes, labels or explanation.`,
       messages: [{
         role: "user",
@@ -254,7 +254,7 @@ Return only the post text, with no quotes, labels or explanation.`,
       .replace(/^['\"]|['\"]$/g, "");
     if (
       text.length >= 35 &&
-      text.length <= 240 &&
+      text.length <= 210 &&
       !BANNED_PATTERNS.some((pattern) => pattern.test(text))
     ) {
       fallbackCandidates.push(text);
@@ -265,6 +265,56 @@ Return only the post text, with no quotes, labels or explanation.`,
     throw new Error(`Claude returned ${fallbackCandidates.length} valid candidates after fallback`);
   }
   return fallbackCandidates;
+}
+
+function fallbackRecommendation(candidates) {
+  const scores = candidates.map((candidate) => {
+    let score = 0;
+    if (/\b(if|when|close|below|above|volume|break|range)\b/i.test(candidate)) score += 2;
+    if (/\d+(?:\.\d+)?%|\$\s?\d{2,3}(?:,\d{3})+/i.test(candidate)) score += 1;
+    return score;
+  });
+  const pick = scores.indexOf(Math.max(...scores)) + 1;
+  return {
+    pick,
+    reason: "najviše je proverljiv: ima konkretan uslov, nivo ili implikaciju koju možemo pratiti",
+  };
+}
+
+async function generateRecommendation(candidates, snapshot) {
+  const fallback = fallbackRecommendation(candidates);
+  try {
+    const message = await anthropic.messages.create({
+      model: MODEL,
+      max_tokens: 180,
+      system: `You are the editor for a small bitcoin/markets account. Compare three candidate posts using the verified market data.
+Pick the one with the clearest, most falsifiable insight and least unsupported inference.
+Return exactly two lines:
+PICK: 1 or 2 or 3
+WHY: one concise reason under 120 characters
+Do not rewrite the posts.`,
+      messages: [{
+        role: "user",
+        content: `Verified market data:\n${snapshotText(snapshot)}\n\nCandidates:\n${candidates
+          .map((candidate, index) => `${index + 1}. ${candidate}`)
+          .join("\n")}`,
+      }],
+    });
+    const raw = message.content
+      .filter((block) => typeof block.text === "string")
+      .map((block) => block.text)
+      .join("\n");
+    const pickMatch = raw.match(/PICK\s*:\s*([123])/i);
+    const whyMatch = raw.match(/WHY\s*:\s*([^\n]+)/i);
+    if (!pickMatch || !whyMatch) return fallback;
+    return {
+      pick: Number(pickMatch[1]),
+      reason: whyMatch[1].trim().slice(0, 120),
+    };
+  } catch (error) {
+    console.warn("Recommendation generation failed:", error.message);
+    return fallback;
+  }
 }
 
 export async function generateChart(snapshot) {
@@ -329,7 +379,7 @@ async function telegramRequest(method, body) {
   return result;
 }
 
-async function sendForApproval(candidates, snapshot, chartBuffer) {
+async function sendForApproval(candidates, snapshot, chartBuffer, recommendation) {
   const direction = snapshot.change24h >= 0 ? "+" : "";
   const candidateText = candidates
     .map((candidate, index) => `<b>Predlog ${index + 1}:</b>\n${escapeHtml(candidate)}`)
@@ -338,6 +388,8 @@ async function sendForApproval(candidates, snapshot, chartBuffer) {
     `<b>Daily kandidati</b>\n\n${candidateText}\n\n` +
     `<b>Market snapshot:</b> ${escapeHtml(formatUsd(snapshot.price))} ` +
     `(${direction}${snapshot.change24h.toFixed(2)}% / 24h)\n\n` +
+    `<b>Moj izbor: Predlog ${recommendation.pick}</b>\n` +
+    `${escapeHtml(recommendation.reason)}\n\n` +
     `<i>Ništa nije objavljeno. Izaberi najviše jedan predlog.</i>`;
 
   const replyMarkup = {
@@ -400,8 +452,9 @@ export default async function handler(req, res) {
       getRecentTweets(),
     ]);
     const candidates = await generateCandidates(snapshot, recentTweets);
+    const recommendation = await generateRecommendation(candidates, snapshot);
     const chartBuffer = await generateChart(snapshot);
-    await sendForApproval(candidates, snapshot, chartBuffer);
+    await sendForApproval(candidates, snapshot, chartBuffer, recommendation);
 
     console.log(`Sent ${candidates.length} daily candidates for approval`);
     return res.status(200).json({
