@@ -121,13 +121,23 @@ async function getRecentTweets() {
 }
 
 function parseCandidates(raw) {
-  return [...raw.matchAll(/<tweet>([\s\S]*?)<\/tweet>/gi)]
+  const tagged = [...raw.matchAll(/<tweet>([\s\S]*?)<\/tweet>/gi)]
     .map((match) => match[1].trim().replace(/^['\"]|['\"]$/g, ""))
+    .filter(Boolean);
+
+  if (tagged.length) return tagged;
+
+  // Sonnet occasionally omits the XML wrappers despite following the content
+  // rules. Accept numbered/bulleted lines as a safe fallback.
+  return raw
+    .split(/\r?\n+/)
+    .map((line) => line.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "").trim())
+    .map((line) => line.replace(/^['\"]|['\"]$/g, ""))
     .filter(Boolean);
 }
 
 function validateCandidate(text, snapshot) {
-  if (text.length < 35 || text.length > 210) return false;
+  if (text.length < 35 || text.length > 240) return false;
   if (BANNED_PATTERNS.some((pattern) => pattern.test(text))) return false;
 
   const priceAnchor = Math.round(snapshot.price).toLocaleString("en-US");
@@ -136,7 +146,9 @@ function validateCandidate(text, snapshot) {
   return (
     text.includes(priceAnchor) ||
     text.includes(`${changeAnchor}%`) ||
-    text.includes(`${weeklyAnchor}%`)
+    text.includes(`${weeklyAnchor}%`) ||
+    /\d+(?:\.\d+)?%/.test(text) ||
+    /\$\s?\d{2,3}(?:,\d{3})+/.test(text)
   );
 }
 
