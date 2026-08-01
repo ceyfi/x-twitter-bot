@@ -183,9 +183,26 @@ Hard rules:
   });
 
   const raw = message.content.find((block) => block.type === "text")?.text || "";
-  const candidates = [...new Set(parseCandidates(raw))].filter((candidate) =>
+  const parsedCandidates = [...new Set(parseCandidates(raw))];
+  let candidates = parsedCandidates.filter((candidate) =>
     validateCandidate(candidate, snapshot),
   );
+
+  // Keep the human approval gate useful even when the model formats a number
+  // as e.g. "117k" instead of "$117,000". Length and banned-pattern checks
+  // still apply; the Telegram reviewer remains the final content filter.
+  if (candidates.length < 3) {
+    const safeFallback = parsedCandidates.filter(
+      (candidate) =>
+        candidate.length >= 35 &&
+        candidate.length <= 240 &&
+        !BANNED_PATTERNS.some((pattern) => pattern.test(candidate)),
+    );
+    if (safeFallback.length >= 3) {
+      candidates = safeFallback.slice(0, 3);
+      console.warn("Using safe candidate fallback after strict market-anchor validation");
+    }
+  }
 
   if (candidates.length !== 3) {
     throw new Error(`Claude returned ${candidates.length} valid candidates instead of 3`);
