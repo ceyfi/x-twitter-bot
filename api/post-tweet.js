@@ -222,10 +222,49 @@ Hard rules:
     }
   }
 
-  if (candidates.length !== 3) {
-    throw new Error(`Claude returned ${candidates.length} valid candidates instead of 3`);
+  if (candidates.length === 3) return candidates;
+
+  console.warn(`Batch candidate format failed (${candidates.length}/3); using single-candidate fallback`);
+  const fallbackFormats = [
+    "a direct observation about what today's BTC move may be pricing in",
+    "a falsifiable take with one condition that would prove it wrong",
+    "a chart-led observation about the 7-day BTC move or range",
+  ];
+  const fallbackCandidates = [];
+
+  for (const format of fallbackFormats) {
+    const single = await anthropic.messages.create({
+      model: MODEL,
+      max_tokens: 140,
+      system: `Write one useful X post for @AlphaGuruReal.
+Never invent personal experience or credentials. No generic wisdom, slogans, hashtags, price targets or fake certainty.
+Use the verified BTC data below. Include at least one number from it. Keep the post between 35 and 240 characters.
+Return only the post text, with no quotes, labels or explanation.`,
+      messages: [{
+        role: "user",
+        content: `Format: ${format}\n\nVerified market data:\n${snapshotText(snapshot)}`,
+      }],
+    });
+    const text = single.content
+      .filter((block) => typeof block.text === "string")
+      .map((block) => block.text)
+      .join(" ")
+      .trim()
+      .split(/\r?\n/)[0]
+      .replace(/^['\"]|['\"]$/g, "");
+    if (
+      text.length >= 35 &&
+      text.length <= 240 &&
+      !BANNED_PATTERNS.some((pattern) => pattern.test(text))
+    ) {
+      fallbackCandidates.push(text);
+    }
   }
-  return candidates;
+
+  if (fallbackCandidates.length !== 3) {
+    throw new Error(`Claude returned ${fallbackCandidates.length} valid candidates after fallback`);
+  }
+  return fallbackCandidates;
 }
 
 export async function generateChart(snapshot) {
