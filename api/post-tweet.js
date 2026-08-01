@@ -127,12 +127,30 @@ function parseCandidates(raw) {
 
   if (tagged.length) return tagged;
 
-  // Sonnet occasionally omits the XML wrappers despite following the content
-  // rules. Accept numbered/bulleted lines as a safe fallback.
+  // Also accept a JSON array if the model chooses structured output.
+  try {
+    const parsed = JSON.parse(raw.trim());
+    if (Array.isArray(parsed)) {
+      const jsonCandidates = parsed
+        .map((item) => (typeof item === "string" ? item : item?.text))
+        .filter(Boolean);
+      if (jsonCandidates.length) return jsonCandidates;
+    }
+  } catch {
+    // The prompt does not require JSON; continue with plain-text parsing.
+  }
+
+  // Sonnet sometimes omits wrappers and writes numbered paragraphs instead.
+  const numbered = raw
+    .split(/(?:^|\n)\s*(?:(?:candidate|tweet)\s*)?\d+[.):\-]\s*/i)
+    .map((block) => block.trim())
+    .filter(Boolean);
+  if (numbered.length >= 3) return numbered;
+
   return raw
-    .split(/\r?\n+/)
-    .map((line) => line.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "").trim())
-    .map((line) => line.replace(/^['\"]|['\"]$/g, ""))
+    .split(/\r?\n\s*\n|\s*---+\s*/)
+    .map((block) => block.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, "").trim())
+    .map((block) => block.replace(/^['\"]|['\"]$/g, ""))
     .filter(Boolean);
 }
 
