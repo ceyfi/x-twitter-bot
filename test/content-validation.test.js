@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildDeterministicCandidates,
   extractDailyCandidate,
   extractQuoteCandidate,
   isApprovalFresh,
@@ -36,6 +37,16 @@ test("selects two general posts and one separately validated chart post", () => 
     "The chart says BTC is at an unsupported $70,000 today.",
   ];
   assert.deepEqual(selectCandidates(batch, snapshot), [batch[0], batch[1], batch[4]]);
+});
+
+test("deterministic fallback always returns three locally valid candidates", () => {
+  for (const price of [62_500, 63_050, 65_500]) {
+    const variant = { ...snapshot, price };
+    const candidates = buildDeterministicCandidates(variant);
+    assert.equal(candidates.length, 3);
+    assert.equal(new Set(candidates).size, 3);
+    assert.equal(candidates.every((candidate) => validateCandidate(candidate, variant)), true);
+  }
 });
 
 test("accepts only candidates anchored to verified snapshot numbers", () => {

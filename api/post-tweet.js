@@ -1,6 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
 import sharp from "sharp";
-import { parseCandidates, selectCandidates } from "../lib/content-validation.js";
+import {
+  buildDeterministicCandidates,
+  parseCandidates,
+  selectCandidates,
+} from "../lib/content-validation.js";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -114,7 +118,7 @@ async function getRecentTweets() {
   }
 }
 
-async function requestCandidateBatch(snapshot, recentContext, retry = false) {
+async function requestCandidateBatch(snapshot, recentContext) {
   const message = await anthropic.messages.create({
     model: MODEL,
     max_tokens: 1000,
@@ -137,7 +141,7 @@ Hard rules:
     messages: [
       {
         role: "user",
-        content: `Current verified market snapshot:\n${snapshotText(snapshot)}\n\nUse different formats from this list:\n${FORMATS.join("\n")}\n\nDo not repeat these recent posts:\n${recentContext}${retry ? "\n\nThe previous batch did not contain enough factually valid candidates. Follow every numeric rule exactly." : ""}`,
+        content: `Current verified market snapshot:\n${snapshotText(snapshot)}\n\nUse different formats from this list:\n${FORMATS.join("\n")}\n\nDo not repeat these recent posts:\n${recentContext}`,
       },
     ],
   });
@@ -151,14 +155,12 @@ export async function generateCandidates(snapshot, recentTweets) {
     ? recentTweets.map((tweet, index) => `${index + 1}. ${tweet}`).join("\n")
     : "No recent tweets available.";
 
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const batch = await requestCandidateBatch(snapshot, recentContext, attempt > 0);
-    const candidates = selectCandidates(batch, snapshot);
-    if (candidates) return candidates;
-    console.warn(`Claude candidate batch ${attempt + 1} failed factual validation`);
-  }
+  const batch = await requestCandidateBatch(snapshot, recentContext);
+  const candidates = selectCandidates(batch, snapshot);
+  if (candidates) return candidates;
 
-  throw new Error("Claude did not return two valid text candidates and one valid chart candidate");
+  console.warn("Claude candidate batch failed factual validation; using deterministic fallback");
+  return buildDeterministicCandidates(snapshot);
 }
 
 function fallbackRecommendation(candidates) {
