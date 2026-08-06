@@ -2,6 +2,8 @@ import Anthropic from "@anthropic-ai/sdk";
 import sharp from "sharp";
 import {
   buildDeterministicCandidates,
+  candidateNoveltyScore,
+  deriveSnapshotMetrics,
   parseCandidates,
   selectCandidates,
 } from "../lib/content-validation.js";
@@ -82,15 +84,18 @@ export async function fetchMarketSnapshot() {
 }
 
 function snapshotText(snapshot) {
-  const rangePercent = ((snapshot.high7d - snapshot.low7d) / snapshot.low7d) * 100;
+  const metrics = deriveSnapshotMetrics(snapshot);
   return [
     `BTC price: ${formatUsd(snapshot.price)}`,
     `24h change: ${snapshot.change24h.toFixed(2)}%`,
     `7d change: ${snapshot.change7d.toFixed(2)}%`,
     `7d range: ${formatUsd(snapshot.low7d)} to ${formatUsd(snapshot.high7d)}`,
-    `7d range width: ${rangePercent.toFixed(2)}%`,
+    `7d range width: ${metrics.rangePercent.toFixed(2)}%`,
+    `distance above 7d low: ${metrics.aboveLowPercent.toFixed(2)}%`,
+    `distance below 7d high: ${metrics.belowHighPercent.toFixed(2)}%`,
     `24h volume: ${formatUsd(snapshot.volume24h)}`,
     `market cap: ${formatUsd(snapshot.marketCap)}`,
+    `24h volume / market cap: ${metrics.turnoverPercent.toFixed(2)}%`,
     `data time: ${snapshot.updatedAt.toISOString()}`,
   ].join("\n");
 }
@@ -111,17 +116,20 @@ async function getRecentTweets() {
       max_results: 20,
       "tweet.fields": ["text"],
     });
-    return timeline.data?.data?.map((tweet) => tweet.text) || [];
+    return {
+      tweets: timeline.data?.data?.map((tweet) => tweet.text) || [],
+      available: true,
+    };
   } catch (error) {
     console.warn("Could not load recent tweets:", error.message);
-    return [];
+    return { tweets: [], available: false };
   }
 }
 
 async function requestCandidateBatch(snapshot, recentContext) {
   const message = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: 1000,
+    max_tokens: 1400,
     system: `You write for @AlphaGuruReal, a small account about bitcoin, markets and AI.
 
 The account must earn attention through concrete information, not fake wisdom.
@@ -135,9 +143,11 @@ Hard rules:
 - Plain English. Natural capitalization is allowed. Maximum 210 characters.
 - Each candidate must make a materially different point.
 - Use only dollar values and percentages present in the supplied snapshot. Do not calculate or invent new targets.
-- Candidates 1-4 are general market posts.
-- Candidates 5-6 accompany a 7-day BTC chart and must discuss the 7-day move or range.
-- Return exactly six candidates, each wrapped in <tweet>...</tweet>. Nothing else.`,
+- Use these angles once each: timeframe comparison, turnover, precise question, range position, range width, distance from an edge, conditional invalidation, direct observation.
+- Do not reuse the sentence structure, thesis or range-break framing from recent posts.
+- Candidates 1-5 are general market posts.
+- Candidates 6-8 accompany a 7-day BTC chart and must discuss visible chart structure.
+- Return exactly eight candidates, each wrapped in <tweet>...</tweet>. Nothing else.`,
     messages: [
       {
         role: "user",
@@ -155,39 +165,46 @@ export async function generateCandidates(snapshot, recentTweets) {
     ? recentTweets.map((tweet, index) => `${index + 1}. ${tweet}`).join("\n")
     : "No recent tweets available.";
 
-  const batch = await requestCandidateBatch(snapshot, recentContext);
-  const candidates = selectCandidates(batch, snapshot);
-  if (candidates) return candidates;
+  try {
+    const batch = await requestCandidateBatch(snapshot, recentContext);
+    const candidates = selectCandidates(batch, snapshot, recentTweets);
+    if (candidates) return { candidates, source: "claude" };
+  } catch (error) {
+    console.warn("Claude candidate request failed; using rotating fallback:", error.message);
+  }
 
-  console.warn("Claude candidate batch failed factual validation; using deterministic fallback");
-  return buildDeterministicCandidates(snapshot);
+  console.warn("Claude batch failed factual/novelty validation; using rotating fallback");
+  return {
+    candidates: buildDeterministicCandidates(snapshot, recentTweets),
+    source: "rotating-fallback",
+  };
 }
 
-function fallbackRecommendation(candidates) {
+function fallbackRecommendation(candidates, recentTweets) {
   const scores = candidates.map((candidate) => {
-    let score = 0;
-    if (/\b(if|when|close|below|above|volume|break|range)\b/i.test(candidate)) score += 2;
+    let score = candidateNoveltyScore(candidate, recentTweets) * 5;
+    if (/\b(if|when|question|which|what)\b/i.test(candidate)) score += 0.5;
     if (/\d+(?:\.\d+)?%|\$\s?\d{2,3}(?:,\d{3})+/i.test(candidate)) score += 1;
     return score;
   });
   const pick = scores.indexOf(Math.max(...scores)) + 1;
   return {
     pick,
-    reason: "najviše je proverljiv: ima konkretan uslov, nivo ili implikaciju koju možemo pratiti",
+    reason: "najviše se razlikuje od skorijih objava, uz proverljive brojke i jasan zaključak",
   };
 }
 
-export async function generateRecommendation(candidates, snapshot) {
+export async function generateRecommendation(candidates, snapshot, recentTweets = []) {
   if (!Array.isArray(candidates) || candidates.length < 2 || candidates.length > 3) {
     throw new Error("Recommendation requires two or three candidates");
   }
-  const fallback = fallbackRecommendation(candidates);
+  const fallback = fallbackRecommendation(candidates, recentTweets);
   try {
     const message = await anthropic.messages.create({
       model: MODEL,
       max_tokens: 180,
-      system: `You are the editor for a small bitcoin/markets account. Compare three candidate posts using the verified market data.
-Pick the one with the clearest, most falsifiable insight and least unsupported inference.
+      system: `You are the editor for a small bitcoin/markets account. Compare the candidate posts using verified market data and recent account posts.
+Novelty is the first priority: reject repeated thesis, sentence structure and range-break framing. Then prefer clear, falsifiable insight with no unsupported inference.
 Return exactly two lines:
 PICK: ${candidates.map((_, index) => index + 1).join(" or ")}
 WHY: one concise reason under 120 characters
@@ -195,7 +212,7 @@ Write the WHY value in Serbian.
 Do not rewrite the posts.`,
       messages: [{
         role: "user",
-        content: `Verified market data:\n${snapshotText(snapshot)}\n\nCandidates:\n${candidates
+        content: `Verified market data:\n${snapshotText(snapshot)}\n\nRecent posts to avoid:\n${recentTweets.slice(0, 6).join("\n") || "None available"}\n\nCandidates:\n${candidates
           .map((candidate, index) => `${index + 1}. ${candidate}`)
           .join("\n")}`,
       }],
@@ -207,10 +224,13 @@ Do not rewrite the posts.`,
     const pickMatch = raw.match(new RegExp(`PICK\\s*:\\s*([1-${candidates.length}])`, "i"));
     const whyMatch = raw.match(/WHY\s*:\s*([^\n]+)/i);
     if (!pickMatch || !whyMatch) return fallback;
-    return {
-      pick: Number(pickMatch[1]),
-      reason: whyMatch[1].trim().slice(0, 120),
-    };
+    const modelPick = Number(pickMatch[1]);
+    const noveltyScores = candidates.map((candidate) => candidateNoveltyScore(candidate, recentTweets));
+    const mostNovelPick = noveltyScores.indexOf(Math.max(...noveltyScores)) + 1;
+    if (noveltyScores[modelPick - 1] + 0.15 < noveltyScores[mostNovelPick - 1]) {
+      return fallback;
+    }
+    return { pick: modelPick, reason: whyMatch[1].trim().slice(0, 120) };
   } catch (error) {
     console.warn("Recommendation generation failed:", error.message);
     return fallback;
@@ -289,7 +309,7 @@ async function sendFailureAlert(error) {
   });
 }
 
-async function sendForApproval(candidates, snapshot, chartBuffer, recommendation) {
+async function sendForApproval(candidates, snapshot, chartBuffer, recommendation, generationSource, antiRepeatAvailable) {
   const direction = snapshot.change24h >= 0 ? "+" : "";
   const candidateText = candidates
     .map((candidate, index) => `<b>Predlog ${index + 1}:</b>\n${escapeHtml(candidate)}`)
@@ -300,6 +320,7 @@ async function sendForApproval(candidates, snapshot, chartBuffer, recommendation
     `(${direction}${snapshot.change24h.toFixed(2)}% / 24h)\n\n` +
     `<b>Moj izbor: Predlog ${recommendation.pick}</b>\n` +
     `${escapeHtml(recommendation.reason)}\n\n` +
+    `<i>Izvor: ${generationSource === "claude" ? "Claude" : "rotirajući fallback"} · anti-repeat: ${antiRepeatAvailable ? "aktivan" : "bez X konteksta"}</i>\n` +
     `<i>Ništa nije objavljeno. Izaberi najviše jedan predlog.</i>`;
 
   const replyMarkup = {
@@ -357,20 +378,29 @@ export default async function handler(req, res) {
   }
 
   try {
-    const [snapshot, recentTweets] = await Promise.all([
+    const [snapshot, recentContext] = await Promise.all([
       fetchMarketSnapshot(),
       getRecentTweets(),
     ]);
-    const candidates = await generateCandidates(snapshot, recentTweets);
-    const recommendation = await generateRecommendation(candidates, snapshot);
+    const generation = await generateCandidates(snapshot, recentContext.tweets);
+    const candidates = generation.candidates;
+    const recommendation = await generateRecommendation(candidates, snapshot, recentContext.tweets);
     const chartBuffer = await generateChart(snapshot);
-    await sendForApproval(candidates, snapshot, chartBuffer, recommendation);
+    await sendForApproval(
+      candidates,
+      snapshot,
+      chartBuffer,
+      recommendation,
+      generation.source,
+      recentContext.available,
+    );
 
     console.log(`Sent ${candidates.length} daily candidates for approval`);
     return res.status(200).json({
       success: true,
       sentForApproval: candidates.length,
       published: false,
+      generationSource: generation.source,
       imageCandidate: 3,
       marketDataUpdatedAt: snapshot.updatedAt.toISOString(),
     });

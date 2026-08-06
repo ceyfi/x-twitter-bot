@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  buildDeterministicCandidatePool,
   buildDeterministicCandidates,
+  candidateSimilarity,
+  classifyAngle,
   extractDailyCandidate,
   extractQuoteCandidate,
   isApprovalFresh,
@@ -47,6 +50,44 @@ test("deterministic fallback always returns three locally valid candidates", () 
     assert.equal(new Set(candidates).size, 3);
     assert.equal(candidates.every((candidate) => validateCandidate(candidate, variant)), true);
   }
+});
+
+test("all rotating fallback formats pass factual validation", () => {
+  const variant = { ...snapshot, updatedAt: new Date("2026-08-06T10:00:00Z") };
+  const pool = buildDeterministicCandidatePool(variant);
+  assert.equal(pool.length, 8);
+  assert.equal(pool.every((item) => validateCandidate(item.text, variant)), true);
+});
+
+test("detects repeated range-break language even when market numbers change", () => {
+  const previous = "BTC is down 1.50% at $62,615. A close below the 7d low of $62,457 would break the current range; staying above it keeps the range intact.";
+  const candidate = "BTC is up 0.60% at $63,264. A close below the 7d low of $62,457 would break the current range; staying above it keeps the range intact.";
+  assert.equal(classifyAngle(candidate), "range_break");
+  assert.ok(candidateSimilarity(previous, candidate) > 0.7);
+});
+
+test("rotating fallback avoids a recently used angle and changes across days", () => {
+  const recent = ["BTC is down 1.50% at $62,615. A close below the 7d low would break the current range."];
+  const dayOne = buildDeterministicCandidates(
+    { ...snapshot, updatedAt: new Date("2026-08-06T10:00:00Z") },
+    recent,
+  );
+  const dayTwo = buildDeterministicCandidates(
+    { ...snapshot, updatedAt: new Date("2026-08-07T10:00:00Z") },
+    recent,
+  );
+  assert.equal(dayOne.some((candidate) => classifyAngle(candidate) === "range_break"), false);
+  assert.notDeepEqual(dayOne, dayTwo);
+});
+
+test("Claude selection rotates without X context and keeps all three angles distinct", () => {
+  const firstSnapshot = { ...snapshot, updatedAt: new Date("2026-08-06T10:00:00Z") };
+  const nextSnapshot = { ...snapshot, updatedAt: new Date("2026-08-07T10:00:00Z") };
+  const batch = buildDeterministicCandidatePool(firstSnapshot).map((item) => item.text);
+  const first = selectCandidates(batch, firstSnapshot);
+  const next = selectCandidates(batch, nextSnapshot);
+  assert.equal(new Set(first.map(classifyAngle)).size, 3);
+  assert.notDeepEqual(first, next);
 });
 
 test("accepts only candidates anchored to verified snapshot numbers", () => {

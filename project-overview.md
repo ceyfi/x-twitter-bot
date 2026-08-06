@@ -7,12 +7,13 @@ Mali serverless sistem koji priprema konkretne X objave za `@AlphaGuruReal` i tr
 1. Vercel cron poziva `GET /api/post-tweet` u 09:00 UTC.
 2. Endpoint proverava obavezni `CRON_SECRET`.
 3. CoinGecko daje aktuelnu BTC cenu, 24h/7d promenu, volumen, market cap i 7d sparkline.
-4. Claude pravi grupu različitih predloga zasnovanih na tim podacima; kod bira dve tekstualne i jednu chart varijantu.
-5. Lokalna validacija odbacuje predugačke, generičke i numerički nepotvrđene tvrdnje.
-6. Sva tri predloga i preview 7-day BTC charta stižu u jednoj Telegram poruci. Ništa se ne objavljuje automatski.
-7. Kandidati 1 i 2 su text-only. Kandidat 3 je napisan uz chart i objavljuje se sa slikom.
-8. Dugme **Objavi 1/2/3** šalje jedan izabrani post na X i uklanja sva dugmad.
-9. Telegram odobrenje važi 24 sata. Greška daily ciklusa šalje upozorenje u isti chat.
+4. Claude pravi osam kandidata iz različitih uglova: odnos 24h/7d kretanja, turnover, pitanje, pozicija i širina range-a, udaljenost od ivice i uslov invalidacije.
+5. Lokalna validacija odbacuje predugačke, generičke, numerički nepotvrđene i suštinski ponovljene tvrdnje. Kod bira dve tekstualne i jednu chart varijantu sa različitim uglovima.
+6. Ako Claude poziv ili validacija ne uspeju, lokalni fallback rotira osam proverljivih formata po datumu i izbegava uglove skorijih objava.
+7. Sva tri predloga i preview 7-day BTC charta stižu u jednoj Telegram poruci, uz oznaku da li ih je izabrao Claude ili rotirajući fallback.
+8. Kandidati 1 i 2 su text-only. Kandidat 3 je napisan uz chart i objavljuje se sa slikom.
+9. Dugme **Objavi 1/2/3** šalje jedan izabrani post na X i uklanja sva dugmad.
+10. Telegram odobrenje važi 24 sata. Greška daily ciklusa šalje upozorenje u isti chat.
 
 ## Reply/quote tok
 
@@ -26,7 +27,8 @@ GitHub Action pokreće proveru u 19:00 po vremenu `Europe/Belgrade`, uz automats
 prilagođavanje letnjem/zimskom računanju vremena. Svakog drugog dana, počev od
 2026-08-02, proverava X timeline. Ako postoji objava u prethodna 24 sata, ne radi
 ništa. Ako je nema, uzima sveže podatke i automatski objavljuje samo najbolji
-provereni text kandidat. Greška X timeline provere prekida objavu (fail closed).
+provereni text kandidat. I ovaj tok koristi istoriju objava za anti-repeat;
+greška X timeline provere prekida objavu (fail closed).
 
 ## Sigurnost
 

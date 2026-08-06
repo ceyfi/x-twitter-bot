@@ -75,9 +75,11 @@ async function main() {
   }
 
   const snapshot = await fetchMarketSnapshot();
-  const candidates = await generateCandidates(snapshot, recentTweets.map((tweet) => tweet.text));
+  const recentTexts = recentTweets.map((tweet) => tweet.text);
+  const generation = await generateCandidates(snapshot, recentTexts);
+  const candidates = generation.candidates;
   const textCandidates = candidates.slice(0, 2);
-  const recommendation = await generateRecommendation(textCandidates, snapshot);
+  const recommendation = await generateRecommendation(textCandidates, snapshot, recentTexts);
   const tweetText = textCandidates[recommendation.pick - 1];
 
   // Close the race where a manual approval lands while Claude is generating.
@@ -92,7 +94,7 @@ async function main() {
   const tweet = await twitterClient.v2.tweet(tweetText);
   const tweetUrl = `https://x.com/AlphaGuruReal/status/${tweet.data.id}`;
 
-  await notify(`✅ Auto fallback je objavljen:\n${tweetText}\n\n${tweetUrl}`)
+  await notify(`✅ Auto fallback je objavljen (${generation.source}):\n${tweetText}\n\n${tweetUrl}`)
     .catch((error) => console.warn("Tweet published, but Telegram notice failed:", error.message));
   console.log(`Published automatic fallback tweet ${tweet.data.id}`);
 }

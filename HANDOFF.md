@@ -4,9 +4,9 @@
 
 Aktivni sistem je Node.js ESM projekat na Vercelu za `@AlphaGuruReal`.
 
-- `api/post-tweet.js`: Vercel cron uzima live BTC podatke, bira tri numerički proverena predloga, dodaje preporuku i 7-day PNG chart, pa ih šalje u jednoj Telegram poruci. Greška generisanja šalje Telegram upozorenje.
+- `api/post-tweet.js`: Vercel cron uzima live BTC podatke, odbacuje uglove i formulacije slične skorijim objavama, bira tri numerički proverena predloga, dodaje preporuku i 7-day PNG chart, pa ih šalje u jednoj Telegram poruci. Ako Claude ne vrati dovoljno dobrih kandidata, koristi se rotirajući lokalni fallback.
 - `api/telegram-webhook.js`: proverava Telegram secret header, chat ID i rok od 24 sata; kandidat 3 preuzima Telegram photo i uploaduje je na X, kandidati 1/2 su text-only, a odobren reply-agent kandidat je quote tweet.
-- `lib/content-validation.js` i `test/content-validation.test.js`: čista validacija sadržaja i unit testovi za kritične parsere/granice.
+- `lib/content-validation.js` i `test/content-validation.test.js`: validacija brojki, prepoznavanje ugla, provera sličnosti i rotirajući fallback, sa unit testovima za kritične parsere/granice.
 - `reply-agent.js`: traži aktuelne objave i šalje samo konkretne predloge; GitHub workflow je manual-only.
 - `auto-post.js`: GitHub Action u 19:00 Europe/Belgrade svakog drugog dana proverava poslednja 24h; objavljuje samo provereni text kandidat ako nalog nema novu objavu. X read greška prekida objavu.
 - Stari Playwright poster, screenshot i njegov workflow su uklonjeni.
@@ -23,7 +23,7 @@ Aktivni sistem je Node.js ESM projekat na Vercelu za `@AlphaGuruReal`.
 ## Namerno nije urađeno
 
 - Nema baze, dashboarda ni dodatnog frameworka.
-- Nema automatskog daily posta bez čoveka.
+- Automatski post postoji samo kao svaki-drugi-dan fallback i objavljuje isključivo text kandidat kada 24 sata nije bilo nove objave.
 - Reply cron nije uključen dok se ručno ne potvrde kvalitet i X API trošak.
 - Nema izmišljenih ličnih iskustava u promptovima.
 
