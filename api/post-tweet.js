@@ -3,24 +3,32 @@ import sharp from "sharp";
 import {
   buildDeterministicCandidates,
   candidateNoveltyScore,
+  candidateSimilarity,
+  classifyAngle,
   deriveSnapshotMetrics,
+  hasSameNumericFacts,
+  isNovelCandidate,
   parseCandidates,
-  selectCandidates,
+  validateCandidate,
 } from "../lib/content-validation.js";
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
 const TELEGRAM_API = "https://api.telegram.org";
-const COINGECKO_URL =
-  "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=bitcoin&price_change_percentage=24h%2C7d&sparkline=true";
+const COINGECKO_MARKETS_URL =
+  "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=20&page=1&sparkline=true&price_change_percentage=7d";
+const COINGECKO_GLOBAL_URL = "https://api.coingecko.com/api/v3/global";
+const TRACKED_MARKET_IDS = new Set([
+  "bitcoin", "ethereum", "binancecoin", "ripple", "solana", "tron", "dogecoin",
+  "cardano", "hyperliquid", "chainlink", "avalanche-2", "sui", "stellar",
+  "hedera-hashgraph", "litecoin", "the-open-network",
+]);
 
-const FORMATS = [
-  "a direct market observation",
-  "a falsifiable prediction with a condition",
-  "a useful question tied to today's data",
-  "a comparison that explains the current move",
-];
+let anthropic;
+function getAnthropicClient() {
+  if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY is not configured");
+  anthropic ||= new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  return anthropic;
+}
 
 function escapeHtml(value) {
   return String(value)
@@ -33,18 +41,31 @@ function formatUsd(value) {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-    maximumFractionDigits: 0,
+    maximumFractionDigits: value < 1 ? 4 : value < 100 ? 2 : 0,
   }).format(value);
 }
 
-export async function fetchMarketSnapshot() {
-  const response = await fetch(COINGECKO_URL, {
+async function fetchCoinGeckoJson(url, label) {
+  const response = await fetch(url, {
     headers: { Accept: "application/json", "User-Agent": "AlphaGuruBot/1.0" },
     signal: AbortSignal.timeout(8000),
   });
-  if (!response.ok) throw new Error(`CoinGecko returned ${response.status}`);
+  if (!response.ok) throw new Error(`CoinGecko ${label} returned ${response.status}`);
+  return response.json();
+}
 
-  const btc = (await response.json())?.[0];
+export async function fetchMarketSnapshot() {
+  const [marketRows, globalResponse] = await Promise.all([
+    fetchCoinGeckoJson(COINGECKO_MARKETS_URL, "markets"),
+    fetchCoinGeckoJson(COINGECKO_GLOBAL_URL, "global").catch((error) => {
+      console.warn("CoinGecko global data unavailable:", error.message);
+      return null;
+    }),
+  ]);
+
+  const btc = Array.isArray(marketRows)
+    ? marketRows.find((asset) => asset.id === "bitcoin")
+    : null;
   const prices = btc?.sparkline_in_7d?.price;
   const requiredValues = [
     btc?.current_price,
@@ -69,6 +90,42 @@ export async function fetchMarketSnapshot() {
 
   const firstPrice = prices[0];
   const lastPrice = prices[prices.length - 1];
+  const assets = marketRows
+    .filter((asset) =>
+      TRACKED_MARKET_IDS.has(asset.id) &&
+      Number.isFinite(asset.current_price) &&
+      Number.isFinite(asset.price_change_percentage_24h) &&
+      Number.isFinite(asset.price_change_percentage_7d_in_currency) &&
+      Number.isFinite(asset.total_volume) &&
+      Number.isFinite(asset.market_cap),
+    )
+    .slice(0, 8)
+    .map((asset) => ({
+      id: asset.id,
+      symbol: String(asset.symbol || asset.id).toUpperCase(),
+      name: asset.name,
+      price: asset.current_price,
+      change24h: asset.price_change_percentage_24h,
+      change7d: asset.price_change_percentage_7d_in_currency,
+      volume24h: asset.total_volume,
+      marketCap: asset.market_cap,
+    }));
+  const globalData = globalResponse?.data;
+  const globalUpdatedAt = new Date(Number(globalData?.updated_at) * 1000);
+  const globalAgeMs = Date.now() - globalUpdatedAt.getTime();
+  const global = [
+    globalData?.total_market_cap?.usd,
+    globalData?.total_volume?.usd,
+    globalData?.market_cap_change_percentage_24h_usd,
+    globalData?.market_cap_percentage?.btc,
+  ].every(Number.isFinite) && globalAgeMs >= -60_000 && globalAgeMs <= 30 * 60_000
+    ? {
+      totalMarketCap: globalData.total_market_cap.usd,
+      totalVolume: globalData.total_volume.usd,
+      marketCapChange24h: globalData.market_cap_change_percentage_24h_usd,
+      btcDominance: globalData.market_cap_percentage.btc,
+    }
+    : null;
 
   return {
     price: btc.current_price,
@@ -80,12 +137,14 @@ export async function fetchMarketSnapshot() {
     low7d: Math.min(...prices),
     prices7d: prices,
     updatedAt,
+    assets,
+    global,
   };
 }
 
 function snapshotText(snapshot) {
   const metrics = deriveSnapshotMetrics(snapshot);
-  return [
+  const lines = [
     `BTC price: ${formatUsd(snapshot.price)}`,
     `24h change: ${snapshot.change24h.toFixed(2)}%`,
     `7d change: ${snapshot.change7d.toFixed(2)}%`,
@@ -97,7 +156,21 @@ function snapshotText(snapshot) {
     `market cap: ${formatUsd(snapshot.marketCap)}`,
     `24h volume / market cap: ${metrics.turnoverPercent.toFixed(2)}%`,
     `data time: ${snapshot.updatedAt.toISOString()}`,
-  ].join("\n");
+  ];
+  if (snapshot.assets?.length) {
+    lines.push("Tracked non-stable majors:");
+    for (const asset of snapshot.assets) {
+      lines.push(`${asset.symbol}: ${formatUsd(asset.price)}, 24h ${asset.change24h.toFixed(2)}%, 7d ${asset.change7d.toFixed(2)}%`);
+    }
+  }
+  if (snapshot.global) {
+    lines.push(
+      `Total crypto market cap: ${formatUsd(snapshot.global.totalMarketCap)}`,
+      `Total market cap 24h change: ${snapshot.global.marketCapChange24h.toFixed(2)}%`,
+      `BTC dominance: ${snapshot.global.btcDominance.toFixed(2)}%`,
+    );
+  }
+  return lines.join("\n");
 }
 
 async function getRecentTweets() {
@@ -126,32 +199,30 @@ async function getRecentTweets() {
   }
 }
 
-async function requestCandidateBatch(snapshot, recentContext) {
-  const message = await anthropic.messages.create({
+async function requestCandidateBatch(snapshot, recentContext, factLockedDrafts) {
+  const message = await getAnthropicClient().messages.create({
     model: MODEL,
-    max_tokens: 1400,
-    system: `You write for @AlphaGuruReal, a small account about bitcoin, markets and AI.
+    max_tokens: 800,
+    system: `You edit three fact-locked drafts for @AlphaGuruReal, a small account about crypto markets and AI.
 
 The account must earn attention through concrete information, not fake wisdom.
 
 Hard rules:
 - Never invent personal experience, trades, conversations, access or credentials.
-- Every tweet must explicitly include today's BTC price or 24h percentage move.
-- Explain why the number may matter, what would invalidate the take, or ask a precise question.
 - No generic motivational advice, fortune-cookie contrasts or claims about "most people".
 - No hashtags, engagement bait, fake certainty or unsupported price targets.
 - Plain English. Natural capitalization is allowed. Maximum 210 characters.
-- Each candidate must make a materially different point.
-- Use only dollar values and percentages present in the supplied snapshot. Do not calculate or invent new targets.
-- Use these angles once each: timeframe comparison, turnover, precise question, range position, range width, distance from an edge, conditional invalidation, direct observation.
-- Do not reuse the sentence structure, thesis or range-break framing from recent posts.
-- Candidates 1-5 are general market posts.
-- Candidates 6-8 accompany a 7-day BTC chart and must discuss visible chart structure.
-- Return exactly eight candidates, each wrapped in <tweet>...</tweet>. Nothing else.`,
+- Keep every number, symbol, asset, comparison and time window from each draft exactly unchanged.
+- Do not add or remove facts. Change only wording and sentence rhythm.
+- Preserve the order and topic of all three drafts. Candidate 3 still accompanies a BTC 7-day chart.
+- Avoid the wording and sentence structure of recent posts.
+- Return exactly three candidates, each wrapped in <tweet>...</tweet>. Nothing else.`,
     messages: [
       {
         role: "user",
-        content: `Current verified market snapshot:\n${snapshotText(snapshot)}\n\nUse different formats from this list:\n${FORMATS.join("\n")}\n\nDo not repeat these recent posts:\n${recentContext}`,
+        content: `Verified snapshot:\n${snapshotText(snapshot)}\n\nFact-locked drafts:\n${factLockedDrafts
+          .map((draft, index) => `${index + 1}. ${draft}`)
+          .join("\n")}\n\nRecent posts to avoid:\n${recentContext}`,
       },
     ],
   });
@@ -165,18 +236,53 @@ export async function generateCandidates(snapshot, recentTweets) {
     ? recentTweets.map((tweet, index) => `${index + 1}. ${tweet}`).join("\n")
     : "No recent tweets available.";
 
+  const drafts = buildDeterministicCandidates(snapshot, recentTweets);
   try {
-    const batch = await requestCandidateBatch(snapshot, recentContext);
-    const candidates = selectCandidates(batch, snapshot, recentTweets);
-    if (candidates) return { candidates, source: "claude" };
+    const batch = await requestCandidateBatch(snapshot, recentContext, drafts);
+    const candidates = [];
+    const decisions = [];
+    let rewrittenCount = 0;
+    for (let index = 0; index < drafts.length; index += 1) {
+      const candidate = batch[index];
+      const draft = drafts[index];
+      const checks = {
+        present: typeof candidate === "string",
+        locallyValid: validateCandidate(candidate, snapshot),
+        factsPreserved: hasSameNumericFacts(candidate, draft),
+        topicPreserved: classifyAngle(candidate) === classifyAngle(draft),
+        novel: isNovelCandidate(candidate, recentTweets),
+        distinct: candidates.every((selected) =>
+          classifyAngle(candidate) !== classifyAngle(selected) &&
+          candidateSimilarity(candidate, selected) < 0.46,
+        ),
+      };
+      const validRewrite = Object.values(checks).every(Boolean);
+      if (validRewrite) rewrittenCount += 1;
+      candidates.push(validRewrite ? candidate : draft);
+      decisions.push({
+        slot: index + 1,
+        topic: classifyAngle(draft),
+        source: validRewrite ? "claude" : "market-brief",
+        rejectedBy: validRewrite ? [] : Object.entries(checks)
+          .filter(([, passed]) => !passed)
+          .map(([name]) => name),
+      });
+    }
+    const source = rewrittenCount === drafts.length
+      ? "claude"
+      : rewrittenCount > 0 ? `hybrid-${rewrittenCount}-of-${drafts.length}` : "market-briefs";
+    console.log("Candidate generation result", {
+      source,
+      decisions,
+    });
+    return { candidates, source };
   } catch (error) {
-    console.warn("Claude candidate request failed; using rotating fallback:", error.message);
+    console.warn("Claude rewrite failed; using verified market briefs:", error.message);
   }
 
-  console.warn("Claude batch failed factual/novelty validation; using rotating fallback");
   return {
-    candidates: buildDeterministicCandidates(snapshot, recentTweets),
-    source: "rotating-fallback",
+    candidates: drafts,
+    source: "market-briefs",
   };
 }
 
@@ -200,7 +306,7 @@ export async function generateRecommendation(candidates, snapshot, recentTweets 
   }
   const fallback = fallbackRecommendation(candidates, recentTweets);
   try {
-    const message = await anthropic.messages.create({
+    const message = await getAnthropicClient().messages.create({
       model: MODEL,
       max_tokens: 180,
       system: `You are the editor for a small bitcoin/markets account. Compare the candidate posts using verified market data and recent account posts.
@@ -320,7 +426,7 @@ async function sendForApproval(candidates, snapshot, chartBuffer, recommendation
     `(${direction}${snapshot.change24h.toFixed(2)}% / 24h)\n\n` +
     `<b>Moj izbor: Predlog ${recommendation.pick}</b>\n` +
     `${escapeHtml(recommendation.reason)}\n\n` +
-    `<i>Izvor: ${generationSource === "claude" ? "Claude" : "rotirajući fallback"} · anti-repeat: ${antiRepeatAvailable ? "aktivan" : "bez X konteksta"}</i>\n` +
+    `<i>Izvor: ${generationSource === "claude" ? "Claude" : generationSource.startsWith("hybrid") ? "Claude + market brief" : "provereni market briefovi"} · anti-repeat: ${antiRepeatAvailable ? "aktivan" : "bez X konteksta"}</i>\n` +
     `<i>Ništa nije objavljeno. Izaberi najviše jedan predlog.</i>`;
 
   const replyMarkup = {
@@ -352,7 +458,6 @@ async function sendForApproval(candidates, snapshot, chartBuffer, recommendation
 
 function assertConfiguration() {
   const required = [
-    "ANTHROPIC_API_KEY",
     "CRON_SECRET",
     "TELEGRAM_BOT_TOKEN",
     "TELEGRAM_CHAT_ID",

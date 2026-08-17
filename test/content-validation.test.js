@@ -5,8 +5,10 @@ import {
   buildDeterministicCandidates,
   candidateSimilarity,
   classifyAngle,
+  deriveMarketMetrics,
   extractDailyCandidate,
   extractQuoteCandidate,
+  hasSameNumericFacts,
   isApprovalFresh,
   isUsefulReply,
   parseCandidates,
@@ -22,6 +24,25 @@ const snapshot = {
   marketCap: 1_240_000_000_000,
   low7d: 62_563,
   high7d: 65_439,
+};
+
+const marketSnapshot = {
+  ...snapshot,
+  updatedAt: new Date("2026-08-16T10:00:00Z"),
+  assets: [
+    { id: "bitcoin", symbol: "BTC", price: 63_050, change24h: 0.3, change7d: -3, volume24h: 9_000_000_000, marketCap: 1_240_000_000_000 },
+    { id: "ethereum", symbol: "ETH", price: 1_850, change24h: 0.2, change7d: -1.9, volume24h: 7_000_000_000, marketCap: 223_000_000_000 },
+    { id: "binancecoin", symbol: "BNB", price: 620, change24h: -0.7, change7d: 0.4, volume24h: 800_000_000, marketCap: 86_000_000_000 },
+    { id: "ripple", symbol: "XRP", price: 1.2, change24h: 0.8, change7d: -2.1, volume24h: 2_000_000_000, marketCap: 72_000_000_000 },
+    { id: "solana", symbol: "SOL", price: 92, change24h: 1.8, change7d: 5.4, volume24h: 3_000_000_000, marketCap: 50_000_000_000 },
+    { id: "tron", symbol: "TRX", price: 0.31, change24h: 0.4, change7d: 1.2, volume24h: 600_000_000, marketCap: 29_000_000_000 },
+  ],
+  global: {
+    totalMarketCap: 2_250_000_000_000,
+    totalVolume: 72_000_000_000,
+    marketCapChange24h: 0.09,
+    btcDominance: 56.16,
+  },
 };
 
 test("parses tagged, JSON and numbered candidate formats", () => {
@@ -88,6 +109,41 @@ test("Claude selection rotates without X context and keeps all three angles dist
   const next = selectCandidates(batch, nextSnapshot);
   assert.equal(new Set(first.map(classifyAngle)).size, 3);
   assert.notDeepEqual(first, next);
+});
+
+test("market snapshot creates genuinely different cross-market topics", () => {
+  const metrics = deriveMarketMetrics(marketSnapshot);
+  assert.equal(metrics.leader.symbol, "SOL");
+  assert.equal(metrics.laggard.symbol, "BNB");
+
+  const pool = buildDeterministicCandidatePool(marketSnapshot);
+  const generalAngles = new Set(pool.filter((item) => !item.chart).map((item) => item.angle));
+  assert.ok(generalAngles.has("btc_eth_24h"));
+  assert.ok(generalAngles.has("market_breadth"));
+  assert.ok(generalAngles.has("market_dispersion"));
+  assert.ok(generalAngles.has("market_overview"));
+  assert.equal(pool.every((item) => validateCandidate(item.text, marketSnapshot)), true);
+});
+
+test("market candidates avoid the old BTC-only fallback cycle", () => {
+  const recent = [
+    "BTC at $63,162: up 0.30% in 24h and down 3.21% over 7d. The daily move runs against the weekly direction.",
+    "At $63,013, BTC is 0.70% above its 7d low and 3.53% below its 7d high. Price is closer to the low edge.",
+    "BTC is down 0.20% in 24h at $63,425. With the 7d band at $63,305–$65,235, which edge is more likely to be tested next?",
+  ];
+  const candidates = buildDeterministicCandidates(marketSnapshot, recent);
+  assert.equal(candidates.length, 3);
+  assert.ok(classifyAngle(candidates[0]).startsWith("btc_eth") || classifyAngle(candidates[0]).startsWith("market_"));
+  assert.ok(classifyAngle(candidates[1]).startsWith("btc_eth") || classifyAngle(candidates[1]).startsWith("market_") || classifyAngle(candidates[1]) === "major_leader");
+  assert.notEqual(classifyAngle(candidates[0]), classifyAngle(candidates[1]));
+});
+
+test("Claude rewrite must preserve every numeric fact", () => {
+  const draft = "BTC is +0.30% and ETH -1.20% over 24h while BTC trades at $63,050.";
+  const safeRewrite = "Over 24h, ETH is -1.20% and BTC +0.30%, with BTC trading at $63,050.";
+  const changedFact = "Over 24h, ETH is -1.10% and BTC +0.30%, with BTC trading at $63,050.";
+  assert.equal(hasSameNumericFacts(safeRewrite, draft), true);
+  assert.equal(hasSameNumericFacts(changedFact, draft), false);
 });
 
 test("accepts only candidates anchored to verified snapshot numbers", () => {

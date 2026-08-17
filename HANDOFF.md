@@ -4,9 +4,10 @@
 
 Aktivni sistem je Node.js ESM projekat na Vercelu za `@AlphaGuruReal`.
 
-- `api/post-tweet.js`: Vercel cron uzima live BTC podatke, odbacuje uglove i formulacije slične skorijim objavama, bira tri numerički proverena predloga, dodaje preporuku i 7-day PNG chart, pa ih šalje u jednoj Telegram poruci. Ako Claude ne vrati dovoljno dobrih kandidata, koristi se rotirajući lokalni fallback.
+- `api/post-tweet.js`: Vercel cron uzima BTC chart, osam većih non-stable coina i globalni market snapshot sa CoinGecko. Bira dve različite cross-market teme i jedan BTC chart predlog, pa ih šalje u jednoj Telegram poruci.
+- Claude više nije all-or-nothing generator. Dobija tri fact-locked drafta i sme samo da ih preformuliše. Svaki kandidat koji promeni broj, temu ili asset pojedinačno se vraća na provereni market brief; kvar jednog predloga više ne obara ceo paket.
 - `api/telegram-webhook.js`: proverava Telegram secret header, chat ID i rok od 24 sata; kandidat 3 preuzima Telegram photo i uploaduje je na X, kandidati 1/2 su text-only, a odobren reply-agent kandidat je quote tweet.
-- `lib/content-validation.js` i `test/content-validation.test.js`: validacija brojki, prepoznavanje ugla, provera sličnosti i rotirajući fallback, sa unit testovima za kritične parsere/granice.
+- `lib/content-validation.js` i `test/content-validation.test.js`: validacija brojki, očuvanje numeric facts, prepoznavanje teme, provera sličnosti i rotacija market briefova, sa unit testovima za kritične parsere/granice.
 - `reply-agent.js`: traži aktuelne objave i šalje samo konkretne predloge; GitHub workflow je manual-only.
 - `auto-post.js`: GitHub Action u 19:00 Europe/Belgrade svakog drugog dana proverava poslednja 24h; objavljuje samo provereni text kandidat ako nalog nema novu objavu. X read greška prekida objavu.
 - Stari Playwright poster, screenshot i njegov workflow su uklonjeni.

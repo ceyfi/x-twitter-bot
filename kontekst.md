@@ -2,9 +2,9 @@
 
 `@AlphaGuruReal` je mali X nalog o Bitcoinu, tržištima i AI-ju.
 
-Daily bot uzima aktuelne BTC podatke sa CoinGecko, pravi numerički proverene kandidate i 7-day chart, pa ih šalje Marku na Telegram. Kandidati 1/2 su text-only, kandidat 3 ide sa slikom. Daily Telegram tok objavljuje samo ručno odobren kandidat u roku od 24 sata.
+Daily bot uzima BTC chart, osam većih non-stable coina i globalni market snapshot sa CoinGecko. Kandidati 1/2 rotiraju cross-market teme, kandidat 3 ide sa BTC chart slikom. Daily Telegram tok objavljuje samo ručno odobren kandidat u roku od 24 sata.
 
-Generator poredi kandidate sa skorijim X objavama, odbacuje slične formulacije i bira tri različita ugla. Ako Claude ne vrati validan skup, koristi se lokalni fallback od osam formata koji se rotiraju po datumu.
+Generator poredi teme sa skorijim X objavama. Claude samo preformuliše fact-locked draftove; ako promeni činjenicu ili omane format, fallbackuje samo taj kandidat na provereni market brief.
 
 Reply agent je trenutno manual-only GitHub Action. Predlozi takođe zahtevaju Telegram odobrenje.
 
