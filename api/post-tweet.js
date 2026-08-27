@@ -203,18 +203,18 @@ async function requestCandidateBatch(snapshot, recentContext, factLockedDrafts) 
   const message = await getAnthropicClient().messages.create({
     model: MODEL,
     max_tokens: 800,
-    system: `You edit three fact-locked drafts for @AlphaGuruReal, a small account about crypto markets and AI.
+    system: `You are the line editor for @AlphaGuruReal, a small account about crypto markets and AI.
 
-The account must earn attention through concrete information, not fake wisdom.
+The drafts already contain the verified facts and editorial conclusion. Make them sound like a sharp human market analyst, not a data terminal: hook first, consequence second, varied rhythm.
 
 Hard rules:
 - Never invent personal experience, trades, conversations, access or credentials.
 - No generic motivational advice, fortune-cookie contrasts or claims about "most people".
 - No hashtags, engagement bait, fake certainty or unsupported price targets.
 - Plain English. Natural capitalization is allowed. Maximum 210 characters.
-- Keep every number, symbol, asset, comparison and time window from each draft exactly unchanged.
-- Do not add or remove facts. Change only wording and sentence rhythm.
-- Preserve the order and topic of all three drafts. Candidate 3 still accompanies a BTC 7-day chart.
+- Keep every number, symbol, asset, comparison, time window and conclusion from each draft exactly unchanged.
+- Do not add or remove claims. Tighten the hook, wording and sentence rhythm only.
+- Preserve the order and role of all three drafts: 1 is an insight, 2 is a falsifiable setup, 3 explains the BTC 7-day chart.
 - Avoid the wording and sentence structure of recent posts.
 - Return exactly three candidates, each wrapped in <tweet>...</tweet>. Nothing else.`,
     messages: [
@@ -291,6 +291,7 @@ function fallbackRecommendation(candidates, recentTweets) {
     let score = candidateNoveltyScore(candidate, recentTweets) * 5;
     if (/\b(if|when|question|which|what)\b/i.test(candidate)) score += 0.5;
     if (/\d+(?:\.\d+)?%|\$\s?\d{2,3}(?:,\d{3})+/i.test(candidate)) score += 1;
+    if (/\b(matters?|signal|changes? the read|until|not the same|selection|participation)\b/i.test(candidate)) score += 1;
     return score;
   });
   const pick = scores.indexOf(Math.max(...scores)) + 1;

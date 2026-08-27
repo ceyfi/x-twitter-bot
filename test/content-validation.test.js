@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  assessContentSignal,
   buildDeterministicCandidatePool,
   buildDeterministicCandidates,
   candidateSimilarity,
@@ -76,7 +77,8 @@ test("deterministic fallback always returns three locally valid candidates", () 
 test("all rotating fallback formats pass factual validation", () => {
   const variant = { ...snapshot, updatedAt: new Date("2026-08-06T10:00:00Z") };
   const pool = buildDeterministicCandidatePool(variant);
-  assert.equal(pool.length, 8);
+  assert.equal(pool.length, 6);
+  assert.deepEqual(new Set(pool.map((item) => item.pillar)), new Set(["insight", "setup", "chart"]));
   assert.equal(pool.every((item) => validateCandidate(item.text, variant)), true);
 });
 
@@ -125,7 +127,7 @@ test("market snapshot creates genuinely different cross-market topics", () => {
   assert.equal(pool.every((item) => validateCandidate(item.text, marketSnapshot)), true);
 });
 
-test("market candidates avoid the old BTC-only fallback cycle", () => {
+test("market candidates combine an insight, a setup and a chart story", () => {
   const recent = [
     "BTC at $63,162: up 0.30% in 24h and down 3.21% over 7d. The daily move runs against the weekly direction.",
     "At $63,013, BTC is 0.70% above its 7d low and 3.53% below its 7d high. Price is closer to the low edge.",
@@ -134,8 +136,27 @@ test("market candidates avoid the old BTC-only fallback cycle", () => {
   const candidates = buildDeterministicCandidates(marketSnapshot, recent);
   assert.equal(candidates.length, 3);
   assert.ok(classifyAngle(candidates[0]).startsWith("btc_eth") || classifyAngle(candidates[0]).startsWith("market_"));
-  assert.ok(classifyAngle(candidates[1]).startsWith("btc_eth") || classifyAngle(candidates[1]).startsWith("market_") || classifyAngle(candidates[1]) === "major_leader");
+  assert.ok(["range_break", "question"].includes(classifyAngle(candidates[1])));
+  assert.ok(["range_position", "range_width", "range_break"].includes(classifyAngle(candidates[2])));
   assert.notEqual(classifyAngle(candidates[0]), classifyAngle(candidates[1]));
+});
+
+test("auto-post quality gate publishes signals and skips flat noise", () => {
+  assert.equal(assessContentSignal(marketSnapshot).publishable, true);
+  const flat = {
+    ...marketSnapshot,
+    change24h: 0.2,
+    change7d: 1.1,
+    price: 64_000,
+    low7d: 62_000,
+    high7d: 66_000,
+    assets: marketSnapshot.assets.map((asset, index) => ({
+      ...asset,
+      change24h: 0.1 + index * 0.05,
+      change7d: 0.5 + index * 0.1,
+    })),
+  };
+  assert.equal(assessContentSignal(flat).publishable, false);
 });
 
 test("Claude rewrite must preserve every numeric fact", () => {

@@ -10,6 +10,7 @@ Aktivni sistem je Node.js ESM projekat na Vercelu za `@AlphaGuruReal`.
 - `lib/content-validation.js` i `test/content-validation.test.js`: validacija brojki, očuvanje numeric facts, prepoznavanje teme, provera sličnosti i rotacija market briefova, sa unit testovima za kritične parsere/granice.
 - `reply-agent.js`: traži aktuelne objave i šalje samo konkretne predloge; GitHub workflow je manual-only.
 - `auto-post.js`: GitHub Action u 19:00 Europe/Belgrade svakog drugog dana proverava poslednja 24h; objavljuje samo provereni text kandidat ako nalog nema novu objavu. X read greška prekida objavu.
+- Kandidati sada imaju tri različite uredničke uloge: market insight sa zaključkom, proverljiv scenario i priču iz BTC grafikona. Auto fallback dodatno traži signal score >= 2 i preskače ravno tržište umesto da objavi obavezni ticker.
 - Stari Playwright poster, screenshot i njegov workflow su uklonjeni.
 
 ## Obavezno pre završetka

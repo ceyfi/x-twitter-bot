@@ -5,6 +5,7 @@ import {
   generateRecommendation,
   telegramRequest,
 } from "./api/post-tweet.js";
+import { assessContentSignal } from "./lib/content-validation.js";
 import { getAutoScheduleState, hasRecentPost } from "./lib/auto-schedule.js";
 
 const REQUIRED_ENV = [
@@ -74,6 +75,14 @@ async function main() {
   }
 
   const snapshot = await fetchMarketSnapshot();
+  const signal = assessContentSignal(snapshot);
+  if (!force && !signal.publishable) {
+    await notify(
+      `ℹ️ Auto fallback je preskočen: tržište nema dovoljno jak signal (score ${signal.score}/2). Bolje bez posta nego još jedan market ticker.`,
+    ).catch((error) => console.warn("Could not send Telegram quality-skip notice:", error.message));
+    console.log("Auto fallback skipped because no publishable market signal was found", signal);
+    return;
+  }
   const recentTexts = recentTweets.map((tweet) => tweet.text);
   const generation = await generateCandidates(snapshot, recentTexts);
   const candidates = generation.candidates;
